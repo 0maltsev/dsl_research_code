@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boundfin.example/schemas/compiler-certificate.schema.json",
+  "title": "BoundFin compiler certificate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "certificate_id",
+    "created_at",
+    "status",
+    "failure_status",
+    "failure_detail",
+    "diagnostic_codes",
+    "configuration_id",
+    "dataset_id",
+    "seed",
+    "spec_versions",
+    "toolchain_versions",
+    "source",
+    "module",
+    "stages",
+    "size_certificate",
+    "cost_certificate",
+    "layout_certificate",
+    "bir_validation",
+    "wasm_validation",
+    "aot",
+    "artifact_checksums"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "certificate_id": { "$ref": "#/$defs/id" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["accepted", "rejected", "internal_error"] },
+    "failure_status": { "$ref": "#/$defs/nullableFailure" },
+    "failure_detail": { "type": ["string", "null"] },
+    "diagnostic_codes": { "type": "array", "items": { "$ref": "#/$defs/diagnosticCode" }, "uniqueItems": true },
+    "configuration_id": { "$ref": "#/$defs/id" },
+    "dataset_id": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+    "seed": { "type": ["string", "integer", "null"] },
+    "spec_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "numeric", "cost_trace", "abi", "bir", "diagnostics"],
+      "properties": {
+        "language": { "type": "string", "minLength": 1 },
+        "numeric": { "type": "string", "minLength": 1 },
+        "cost_trace": { "type": "string", "minLength": 1 },
+        "abi": { "type": "string", "minLength": 1 },
+        "bir": { "type": "string", "minLength": 1 },
+        "diagnostics": { "type": "string", "minLength": 1 }
+      }
+    },
+    "toolchain_versions": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "sha256"],
+        "properties": {
+          "version": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "language_version", "bytes"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "language_version": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module_id", "entry", "interface_id", "declaration_count", "maximum_rank"],
+      "properties": {
+        "module_id": { "$ref": "#/$defs/id" },
+        "entry": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "interface_id": { "$ref": "#/$defs/sha256" },
+        "declaration_count": { "type": "integer", "minimum": 1 },
+        "maximum_rank": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stage", "status", "input_sha256", "output_sha256", "diagnostic_codes", "record_sha256"],
+        "properties": {
+          "stage": { "enum": ["parse_resolve", "type_effect", "size", "cost_footprint", "normalize", "liveness_layout", "source_to_bir", "bir_validation", "bir_to_wasm_scalar", "bir_to_wasm_simd", "standard_validation", "aot"] },
+          "status": { "enum": ["accepted", "rejected", "not_applicable"] },
+          "input_sha256": { "$ref": "#/$defs/sha256" },
+          "output_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+          "diagnostic_codes": { "type": "array", "items": { "$ref": "#/$defs/diagnosticCode" }, "uniqueItems": true },
+          "record_sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "size_certificate": { "$ref": "#/$defs/nullableCertificate" },
+    "cost_certificate": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "event_units", "components", "result_footprint_bytes", "peak_live_bytes", "rule_ids", "sha256"],
+          "properties": {
+            "mode": { "enum": ["exact", "symbolic_upper", "capacity_only"] },
+            "event_units": { "const": "source_events_and_bytes" },
+            "components": { "$ref": "#/$defs/resourceVector" },
+            "result_footprint_bytes": { "$ref": "#/$defs/naturalExpression" },
+            "peak_live_bytes": { "$ref": "#/$defs/naturalExpression" },
+            "rule_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+            "sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      ]
+    },
+    "layout_certificate": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["abi_input_bytes", "abi_output_bytes", "maximum_frame_bytes", "maximum_stacked_frame_bytes", "runtime_reserve_bytes", "linear_memory_bytes", "reuse_policy", "sha256"],
+          "properties": {
+            "abi_input_bytes": { "type": "integer", "minimum": 0, "maximum": 4294967296 },
+            "abi_output_bytes": { "type": "integer", "minimum": 0, "maximum": 4294967296 },
+            "maximum_frame_bytes": { "type": "integer", "minimum": 0, "maximum": 4294967296 },
+            "maximum_stacked_frame_bytes": { "type": "integer", "minimum": 0, "maximum": 4294967296 },
+            "runtime_reserve_bytes": { "type": "integer", "minimum": 0, "maximum": 4294967296 },
+            "linear_memory_bytes": { "type": "integer", "minimum": 0, "maximum": 4294967296, "multipleOf": 65536 },
+            "reuse_policy": { "enum": ["certified_coloring", "injective_no_reuse"] },
+            "sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      ]
+    },
+    "bir_validation": { "$ref": "#/$defs/nullableValidation" },
+    "wasm_validation": { "$ref": "#/$defs/nullableValidation" },
+    "aot": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runtime", "backend", "runtime_version", "backend_version", "target_triple", "features", "load_only_runner", "wasm_sha256", "aot_sha256", "disassembly_sha256"],
+          "properties": {
+            "runtime": { "type": "string", "minLength": 1 },
+            "backend": { "type": "string", "minLength": 1 },
+            "runtime_version": { "type": "string", "minLength": 1 },
+            "backend_version": { "type": "string", "minLength": 1 },
+            "target_triple": { "type": "string", "minLength": 1 },
+            "features": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+            "load_only_runner": { "type": "boolean" },
+            "wasm_sha256": { "$ref": "#/$defs/sha256" },
+            "aot_sha256": { "$ref": "#/$defs/sha256" },
+            "disassembly_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      ]
+    },
+    "artifact_checksums": { "$ref": "#/$defs/checksums" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "diagnosticCode": { "type": "string", "pattern": "^(LEX|SYN|NAM|TYP|SIZ|EFF|CST|BIR|ABI|WASM|INT|RUN)[0-9]{3}$" },
+    "nullableFailure": {
+      "type": ["string", "null"],
+      "enum": [null, "source_rejected", "abi_rejected", "bir_rejected", "wasm_rejected", "bir_fault", "wasm_trap", "resource_exhaustion", "host_failure", "backend_failure", "os_termination", "hardware_failure", "mismatch", "checksum_failure", "environment_invalid", "counter_failure", "incomplete"]
+    },
+    "naturalExpression": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "string", "minLength": 1 }] },
+    "resourceVector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operations", "allocations", "reserved_bytes", "read_bytes", "written_bytes", "decisions", "call_depth"],
+      "properties": {
+        "operations": { "$ref": "#/$defs/naturalExpression" },
+        "allocations": { "$ref": "#/$defs/naturalExpression" },
+        "reserved_bytes": { "$ref": "#/$defs/naturalExpression" },
+        "read_bytes": { "$ref": "#/$defs/naturalExpression" },
+        "written_bytes": { "$ref": "#/$defs/naturalExpression" },
+        "decisions": { "$ref": "#/$defs/naturalExpression" },
+        "call_depth": { "$ref": "#/$defs/naturalExpression" }
+      }
+    },
+    "nullableCertificate": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["certificate_version", "derivation_count", "formal_constraints", "result_shape", "qf_present", "sha256"],
+          "properties": {
+            "certificate_version": { "type": "string", "minLength": 1 },
+            "derivation_count": { "type": "integer", "minimum": 0 },
+            "formal_constraints": { "type": "array", "items": { "type": "string" } },
+            "result_shape": { "type": "string", "minLength": 1 },
+            "qf_present": { "type": "boolean" },
+            "sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      ]
+    },
+    "nullableValidation": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["validator", "version", "status", "diagnostic_codes", "input_sha256", "report_sha256"],
+          "properties": {
+            "validator": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 },
+            "status": { "enum": ["accepted", "rejected"] },
+            "diagnostic_codes": { "type": "array", "items": { "$ref": "#/$defs/diagnosticCode" }, "uniqueItems": true },
+            "input_sha256": { "$ref": "#/$defs/sha256" },
+            "report_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      ]
+    },
+    "checksums": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$" },
+      "additionalProperties": { "$ref": "#/$defs/sha256" }
+    }
+  }
+}
+

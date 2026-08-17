@@ -1,0 +1,160 @@
+(* BoundFin concrete grammar, language version 0.1.0.
+   Notation follows ISO-style EBNF: comma is concatenation, vertical bar is
+   choice, braces mean zero or more, brackets mean optional, and parenthesis-
+   asterisk delimiters enclose grammar comments. Grammar comments are not
+   source-language comments. *)
+
+module = { function-declaration }, export-declaration, end-of-file ;
+
+function-declaration = "fn", identifier, "(", [ parameter-list ], ")",
+                       ":", type, "=", expression, ";" ;
+parameter-list = parameter, { ",", parameter } ;
+parameter = identifier, ":", type ;
+export-declaration = "export", identifier, ";" ;
+
+type = scalar-type | array-type | product-type ;
+scalar-type = "bool" | "i32" | "i64" | "f64" ;
+array-type = "arr", "<", type, ",", capacity, ">" ;
+product-type = "prod", "<", type, ",", type, { ",", type }, ">" ;
+
+expression = let-expression
+           | conditional-expression
+           | fold-expression
+           | build-expression
+           | logical-or-expression ;
+
+let-expression = "let", identifier, "=", expression, "in", expression ;
+conditional-expression = "if", expression, "then", expression,
+                         "else", expression ;
+
+fold-expression = "fold", "<", capacity, ">", "(",
+                  expression, ";", identifier, ",", identifier, ";",
+                  expression, ";", expression, ")" ;
+build-expression = "build", "<", capacity, ">", "(",
+                   expression, ";", identifier, ";", expression, ")" ;
+
+logical-or-expression = logical-and-expression,
+                        { "||", logical-and-expression } ;
+logical-and-expression = equality-expression,
+                         { "&&", equality-expression } ;
+equality-expression = relational-expression,
+                      [ equality-operator, relational-expression ] ;
+equality-operator = "==" | "!=" ;
+relational-expression = additive-expression,
+                        [ relational-operator, additive-expression ] ;
+relational-operator = "<" | "<=" | ">" | ">=" ;
+additive-expression = multiplicative-expression,
+                      { additive-operator, multiplicative-expression } ;
+additive-operator = "+" | "-" ;
+multiplicative-expression = unary-expression,
+                            { multiplicative-operator, unary-expression } ;
+multiplicative-operator = "*" | "/" | "%" ;
+unary-expression = unary-operator, unary-expression
+                 | postfix-expression ;
+unary-operator = "!" | "-" ;
+
+postfix-expression = primary-expression, { "[", expression, "]" } ;
+primary-expression = literal
+                   | name-expression
+                   | array-literal
+                   | parenthesized-expression
+                   | length-expression
+                   | projection-expression
+                   | absolute-expression ;
+
+name-expression = identifier, [ "(", [ argument-list ], ")" ] ;
+argument-list = expression, { ",", expression } ;
+array-literal = "array", "<", capacity, ">", "[",
+                [ expression, { ",", expression } ], "]" ;
+parenthesized-expression = "(", expression,
+                           [ ",", expression, { ",", expression } ], ")" ;
+length-expression = "len", "(", expression, ")" ;
+projection-expression = "proj", "<", positive-decimal, ">",
+                        "(", expression, ")" ;
+absolute-expression = "abs", "(", expression, ")" ;
+
+literal = boolean-literal | i32-bit-literal | i64-bit-literal | f64-bit-literal ;
+boolean-literal = "true" | "false" ;
+i32-bit-literal = "i32bits", "(", "0x", hex8, ")" ;
+i64-bit-literal = "i64bits", "(", "0x", hex16, ")" ;
+f64-bit-literal = "f64bits", "(", "0x", hex16, ")" ;
+
+capacity = decimal ;
+positive-decimal = nonzero-digit, { decimal-digit } ;
+decimal = "0" | nonzero-digit, { decimal-digit } ;
+
+identifier = identifier-start, { identifier-continue } ;
+identifier-start = ascii-letter | "_" ;
+identifier-continue = ascii-letter | decimal-digit | "_" ;
+ascii-letter = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" |
+               "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" |
+               "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" |
+               "Y" | "Z" |
+               "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" |
+               "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" |
+               "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" |
+               "y" | "z" ;
+decimal-digit = "0" | nonzero-digit ;
+nonzero-digit = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+hex-digit = decimal-digit | "a" | "b" | "c" | "d" | "e" | "f" |
+                          "A" | "B" | "C" | "D" | "E" | "F" ;
+hex2 = hex-digit, hex-digit ;
+hex4 = hex2, hex2 ;
+hex8 = hex4, hex4 ;
+hex16 = hex8, hex8 ;
+
+whitespace = { whitespace-character } ;
+whitespace-character = " " | horizontal-tab | line-feed | carriage-return ;
+horizontal-tab = ? U+0009 ? ;
+line-feed = ? U+000A ? ;
+carriage-return = ? U+000D ? ;
+end-of-file = ? end of UTF-8 input ? ;
+
+(* Lexical constraints:
+   1. Input must be shortest-form valid UTF-8, without a byte-order mark.
+   2. Outside whitespace, every source character is ASCII and belongs to a token above.
+   3. Tokens use maximal munch. Keywords are recognized before identifier.
+   4. Reserved words are: fn, export, bool, i32, i64, f64, arr, prod,
+      let, in, if, then, else, fold, build, array, len, proj, abs,
+      true, false, i32bits, i64bits, and f64bits.
+   5. A reserved word cannot be an identifier. Case is significant.
+   6. Source comments and decimal floating literals do not exist in version 0.1.0.
+   7. Capacity evaluation is lexical decimal to a mathematical natural and then a
+      static check for N <= 2147483647. Leading zeroes are invalid except for "0".
+   8. Whitespace may appear between tokens but never inside a token. *)
+
+(* Static concrete-syntax constraints:
+   1. A module has at least one declaration, exactly one final export, and no text
+      after the export except whitespace.
+   2. Product types and product expressions have arity at least two.
+   3. Projection indices are one-based positive decimals; type checking requires
+      1 <= j <= product arity.
+   4. Function, parameter, let, fold-index, fold-accumulator, and build-index names
+      are resolved and alpha-renamed; duplicate declarations/parameters are errors.
+   5. The export must name exactly one declared function.
+   6. An array literal with m elements requires m <= N.
+   7. Fold/build capacities and array capacities are compile-time literals. *)
+
+(* Precedence and associativity, highest to lowest:
+   postfix indexing (left), unary ! and - (right), * / % (left), + - (left),
+   relational (non-associative), equality (non-associative), && (left), || (left),
+   then fold/build/if/let forms. Calls, len, proj, abs, literals, arrays, products,
+   and grouping are primary expressions. Chained comparisons/equalities are syntax
+   errors unless parentheses make a Boolean operand explicit. *)
+
+(* Mandatory elaboration before typing/size/cost analysis:
+   !x              -> bool.not(x)
+   x && y          -> bool.and(x,y)
+   x || y          -> bool.or(x,y)
+   -x              -> neg32/neg64/fneg selected only by operand type
+   x + y           -> add32/add64/fadd selected only by equal operand types
+   x - y           -> sub32/sub64/fsub selected only by equal operand types
+   x * y           -> mul32/mul64/fmul selected only by equal operand types
+   x / y           -> divs32/divs64/fdiv selected only by equal operand types
+   x % y           -> rems32/rems64; floating remainder is rejected
+   ==, !=          -> the exact Boolean/integer/f64 equality primitive
+   <, <=, >, >=    -> signed integer or f64 comparison; Boolean order is rejected
+   abs(x)          -> fabs and requires f64
+   Elaboration is one source action per operator and preserves left-to-right child
+   order and source span. No implicit conversion, folding, reassociation, or check
+   elimination is part of elaboration. *)

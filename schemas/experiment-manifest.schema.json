@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boundfin.example/schemas/experiment-manifest.schema.json",
+  "title": "BoundFin experiment manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_id",
+    "experiment_id",
+    "created_at",
+    "phase",
+    "status",
+    "failure_status",
+    "failure_detail",
+    "diagnostic_codes",
+    "configuration_id",
+    "dataset_id",
+    "seed",
+    "spec_versions",
+    "schema_versions",
+    "toolchain",
+    "machine",
+    "build_matrix",
+    "datasets",
+    "randomization",
+    "sampling_plan",
+    "analysis_plan",
+    "decisions",
+    "artifact_checksums"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "manifest_id": { "$ref": "#/$defs/id" },
+    "experiment_id": { "$ref": "#/$defs/id" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "phase": { "enum": ["smoke", "pilot", "confirmatory", "analysis_replay"] },
+    "status": { "enum": ["ready", "blocked", "running", "complete", "failed"] },
+    "failure_status": { "$ref": "#/$defs/nullableFailure" },
+    "failure_detail": { "type": ["string", "null"], "minLength": 1 },
+    "diagnostic_codes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnosticCode" },
+      "uniqueItems": true
+    },
+    "configuration_id": { "$ref": "#/$defs/id" },
+    "dataset_id": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+    "seed": { "type": ["string", "integer", "null"] },
+    "spec_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "numeric", "cost_trace", "abi", "bir", "diagnostics", "experiment"],
+      "properties": {
+        "language": { "type": "string", "minLength": 1 },
+        "numeric": { "type": "string", "minLength": 1 },
+        "cost_trace": { "type": "string", "minLength": 1 },
+        "abi": { "type": "string", "minLength": 1 },
+        "bir": { "type": "string", "minLength": 1 },
+        "diagnostics": { "type": "string", "minLength": 1 },
+        "experiment": { "type": "string", "minLength": 1 }
+      }
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["experiment_manifest", "compiler_certificate", "correctness_result", "benchmark_sample"],
+      "properties": {
+        "experiment_manifest": { "type": "string", "minLength": 1 },
+        "compiler_certificate": { "type": "string", "minLength": 1 },
+        "correctness_result": { "type": "string", "minLength": 1 },
+        "benchmark_sample": { "type": "string", "minLength": 1 }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cxx_compiler", "linker", "cmake", "ninja", "wasm_runtime", "wasm_backend", "wasm_validator", "disassembler", "analysis_runtime"],
+      "properties": {
+        "cxx_compiler": { "$ref": "#/$defs/tool" },
+        "linker": { "$ref": "#/$defs/tool" },
+        "cmake": { "$ref": "#/$defs/tool" },
+        "ninja": { "$ref": "#/$defs/tool" },
+        "wasm_runtime": { "$ref": "#/$defs/tool" },
+        "wasm_backend": { "$ref": "#/$defs/tool" },
+        "wasm_validator": { "$ref": "#/$defs/tool" },
+        "disassembler": { "$ref": "#/$defs/tool" },
+        "analysis_runtime": { "$ref": "#/$defs/tool" }
+      }
+    },
+    "machine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["machine_id", "manufacturer", "model", "cpu", "isa", "cores", "smt", "numa_nodes", "memory_bytes", "os", "kernel", "microcode", "frequency_policy", "turbo_policy", "page_policy", "cache_policy", "timezone"],
+      "properties": {
+        "machine_id": { "$ref": "#/$defs/id" },
+        "manufacturer": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "cpu": { "type": "string", "minLength": 1 },
+        "isa": { "type": "string", "minLength": 1 },
+        "cores": { "type": "integer", "minimum": 1 },
+        "smt": { "enum": ["disabled", "enabled_idle_sibling", "enabled_uncontrolled"] },
+        "numa_nodes": { "type": "integer", "minimum": 1 },
+        "memory_bytes": { "type": "integer", "minimum": 1 },
+        "os": { "type": "string", "minLength": 1 },
+        "kernel": { "type": "string", "minLength": 1 },
+        "microcode": { "type": ["string", "null"] },
+        "frequency_policy": { "type": "string", "minLength": 1 },
+        "turbo_policy": { "type": "string", "minLength": 1 },
+        "page_policy": { "type": "string", "minLength": 1 },
+        "cache_policy": { "type": "string", "minLength": 1 },
+        "timezone": { "type": "string", "minLength": 1 }
+      }
+    },
+    "build_matrix": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["build_id", "family", "execution_form", "kernels", "compiler_flags", "target_triple", "isa_features", "simd_policy", "floating_policy", "artifact_sha256"],
+        "properties": {
+          "build_id": { "$ref": "#/$defs/id" },
+          "family": { "enum": ["MS", "PO", "SIMD"] },
+          "execution_form": { "enum": ["wasm", "native"] },
+          "kernels": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "enum": ["K1", "K2", "K3"] },
+            "uniqueItems": true
+          },
+          "compiler_flags": { "type": "array", "items": { "type": "string" } },
+          "target_triple": { "type": "string", "minLength": 1 },
+          "isa_features": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+          "simd_policy": { "enum": ["disabled_audited", "permitted_observed", "explicit_k1_k2"] },
+          "floating_policy": { "const": "strict" },
+          "artifact_sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "datasets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["dataset_id", "kernel", "size", "capacity", "stratum", "pattern", "seed", "generator_version", "input_sha256", "multiset_sha256", "order_sha256", "oracle_sha256", "storage_path"],
+        "properties": {
+          "dataset_id": { "$ref": "#/$defs/id" },
+          "kernel": { "enum": ["K1", "K2", "K3"] },
+          "size": { "type": "integer", "minimum": 0 },
+          "capacity": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+          "stratum": { "type": ["string", "null"] },
+          "pattern": { "type": ["string", "null"] },
+          "seed": { "type": ["string", "integer"] },
+          "generator_version": { "type": "string", "minLength": 1 },
+          "input_sha256": { "$ref": "#/$defs/sha256" },
+          "multiset_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+          "order_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+          "oracle_sha256": { "$ref": "#/$defs/sha256" },
+          "storage_path": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "randomization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "version", "master_seed", "domain_separation", "schedule_sha256"],
+      "properties": {
+        "algorithm": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "master_seed": { "type": ["string", "integer"] },
+        "domain_separation": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+        "schedule_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "sampling_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessions", "pairs_per_session", "runs_per_condition", "observations_per_run", "warmup_calls", "block_rule", "p999_conditions", "units"],
+      "properties": {
+        "sessions": { "type": "integer", "minimum": 1 },
+        "pairs_per_session": { "type": "integer", "minimum": 1 },
+        "runs_per_condition": { "type": "integer", "minimum": 1 },
+        "observations_per_run": { "type": "integer", "minimum": 1 },
+        "warmup_calls": { "type": "integer", "minimum": 0 },
+        "block_rule": { "type": "string", "minLength": 1 },
+        "p999_conditions": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true },
+        "units": { "const": "invocations" }
+      }
+    },
+    "analysis_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["estimand", "primary_interval", "replicates", "equivalence_lower", "equivalence_upper", "tail_rule", "analysis_seed", "plan_sha256"],
+      "properties": {
+        "estimand": { "const": "equal_session_mean_of_paired_log_process_median_ratios" },
+        "primary_interval": { "const": "hierarchical_max_standardized_simultaneous_bootstrap" },
+        "replicates": { "const": 10000 },
+        "equivalence_lower": { "type": "number", "exclusiveMinimum": 0 },
+        "equivalence_upper": { "type": "number", "exclusiveMinimum": 0 },
+        "tail_rule": { "type": "string", "minLength": 1 },
+        "analysis_seed": { "type": ["string", "integer"] },
+        "plan_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["decision_id", "status", "resolution", "evidence_sha256"],
+        "properties": {
+          "decision_id": { "type": "string", "pattern": "^DEC-[0-9]{3}$" },
+          "status": { "enum": ["frozen", "not_applicable"] },
+          "resolution": { "type": "string", "minLength": 1 },
+          "evidence_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] }
+        }
+      }
+    },
+    "artifact_checksums": { "$ref": "#/$defs/checksums" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "diagnosticCode": { "type": "string", "pattern": "^(LEX|SYN|NAM|TYP|SIZ|EFF|CST|BIR|ABI|WASM|INT|RUN)[0-9]{3}$" },
+    "nullableFailure": {
+      "type": ["string", "null"],
+      "enum": [null, "source_rejected", "abi_rejected", "bir_rejected", "wasm_rejected", "bir_fault", "wasm_trap", "resource_exhaustion", "host_failure", "backend_failure", "os_termination", "hardware_failure", "mismatch", "checksum_failure", "environment_invalid", "counter_failure", "incomplete"]
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "sha256", "configuration"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "configuration": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "checksums": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$" },
+      "additionalProperties": { "$ref": "#/$defs/sha256" }
+    }
+  }
+}
+
