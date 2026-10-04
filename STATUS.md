@@ -4,7 +4,7 @@ Last updated: 2026-10-05
 
 ## Current phase
 
-Phase 1 — Repository and toolchain foundation (Track C) is complete (see caveat on its CI milestone below). Phase 2 — Lexer, parser, and AST has not started.
+Phase 1 — Repository and toolchain foundation (Track C) is complete. Phase 2 — Lexer, parser, and AST has not started.
 
 Readiness: **GO for Track C** (correctness and static evidence, any development host whose toolchain is exactly recorded) since `DEC-014` was approved on 2026-10-04 and `DEC-015` confirmed its host scope on 2026-10-05. **NO-GO for Track P** (timed artifacts and Phases 12–16) pending DEC-001–DEC-013. No DSL implementation exists yet — Phase 1 is pure build/toolchain infrastructure; Phase 2 is the first phase that touches the language itself.
 
@@ -22,7 +22,7 @@ Readiness: **GO for Track C** (correctness and static evidence, any development 
 | Claude Code operating setup (2026-10-04) | Complete | `CLAUDE.md` (imports `AGENTS.md`); `.claude/settings.json` hooks guarding `spec/paper/`, the manuscript repository, and append-only `evidence/raw/`, tested on allowed, blocked, and tampered-copy cases; skills `/next-milestone` and `/paper-results`; subagents `spec-auditor` and `independent-oracle`; evidence layout in `docs/architecture.md`; proposed `DEC-014`. No production code. Snapshot hashes re-verified unchanged. |
 | `DEC-015` approved (2026-10-05) | Complete | Author approved option (b); `DEC-014`(b) covers any development host whose exact toolchain is recorded by the Phase 1 manifest emitter, not only the host named at `DEC-014`'s approval. |
 | Phase 1.1 (2026-10-05) | Complete | See "Phase 1.1 evidence" below; a `spec-auditor` review's two FAIL findings were fixed and re-verified (7/7 tests) before this update; its `DEC-015` finding is resolved above. |
-| Phase 1.2 / Phase 1 overall (2026-10-05) | Complete, with one caveat below | `.github/workflows/ci.yml` authored and statically verified (`actionlint` clean) plus its full command sequence run locally end-to-end (`npm ci`, fresh configure/build, 7/7 `ctest`, snapshot check); a `spec-auditor` review returned **PASS**, no FAIL findings. **Caveat**: the workflow has not yet executed on a real GitHub-hosted runner (requires a `git push`, which this session has not been asked to do), so a first-run surprise (e.g. a GCC-version-sensitive warning under `-Werror` on `ubuntu-24.04`'s default GCC 12–14, versus this session's GCC 16.1.1) remains possible and is not yet ruled out. See "Phase 1.2 evidence" below. |
+| Phase 1.2 / Phase 1 overall (2026-10-05) | Complete | `.github/workflows/ci.yml` authored and statically verified (`actionlint` clean) plus its full command sequence run locally end-to-end (`npm ci`, fresh configure/build, 7/7 `ctest`, snapshot check); a `spec-auditor` review returned **PASS**, no FAIL findings. Pushed to `origin/main` (commit `3c32e95`); the workflow's first real run on a GitHub-hosted `ubuntu-24.04` runner (run `37237124426`) **succeeded** — every step, including Build and Test, passed, so the audit's flagged GCC-version risk (that runner's default GCC 12–14 vs. this session's GCC 16.1.1) did not materialize. See "Phase 1.2 evidence" below. |
 
 ## Phase 1.1 evidence
 
@@ -49,8 +49,9 @@ Commands run and their outcomes:
 - `rm -rf build && cmake --preset dev && cmake --build --preset dev` — clean out-of-tree configure and build, 0 warnings.
 - `ctest --preset dev` — 7/7 pass, including the new version-upgrade drift case.
 - `.claude/hooks/check-snapshot.sh session` — paper snapshot unchanged.
-- A `spec-auditor` review returned **PASS** (no FAIL findings) and additionally independently re-verified: both pinned Action SHAs match their claimed tags; the SHA-256 recorded for `actionlint`'s release archive matches its published checksum; `cmake_minimum_required(VERSION 3.25)` is satisfied by `ubuntu-24.04`'s shipped CMake; the new test case genuinely asserts `RUN014`/`DriftStatus::kDrift`/the drifted tool name, not merely executing the code path; the workflow has minimal `permissions: contents: read`, touches no secrets and no protected path. It flagged one **PLAUSIBLE** risk, recorded as the caveat above (no real-runner execution yet, so a GCC-version-sensitive warning under `-Werror` is not yet ruled out), and one **NOTE** (now addressed: `actionlint`'s non-blocking status is now stated explicitly in `docs/dependency-policy.md`).
+- A `spec-auditor` review returned **PASS** (no FAIL findings) and additionally independently re-verified: both pinned Action SHAs match their claimed tags; the SHA-256 recorded for `actionlint`'s release archive matches its published checksum; `cmake_minimum_required(VERSION 3.25)` is satisfied by `ubuntu-24.04`'s shipped CMake; the new test case genuinely asserts `RUN014`/`DriftStatus::kDrift`/the drifted tool name, not merely executing the code path; the workflow has minimal `permissions: contents: read`, touches no secrets and no protected path. It flagged one **PLAUSIBLE** risk (no real-runner execution yet, so a GCC-version-sensitive warning under `-Werror` was not yet ruled out — resolved below), and one **NOTE** (addressed: `actionlint`'s non-blocking status is now stated explicitly in `docs/dependency-policy.md`).
 - The audit also reported, as an aside unrelated to this milestone's substance, that a tool-result in its session contained a prompt-injection attempt (an impersonated "MCP Server Instructions" block trying to direct it to create a docs artifact); it correctly disregarded this and took no action on it.
+- **First real CI run (2026-10-05, after pushing commit `3c32e95` to `origin/main`)**: [run `37237124426`](https://github.com/0maltsev/dsl_research_code/actions/runs/37237124426) on a GitHub-hosted `ubuntu-24.04` runner — **succeeded**, every step green (checkout, install Ninja/OpenSSL/Node, `npm ci`, configure, build, test, snapshot check), total job time 34s. This resolves the `spec-auditor`'s PLAUSIBLE risk: the real runner's default GCC did not trip `-Werror` differently from this session's GCC 16.1.1.
 
 ## Open blockers
 
@@ -69,7 +70,5 @@ Every blocker above is `AUTHOR DECISION REQUIRED`; no benchmark implementation o
 ## Next permitted work
 
 Track C, Phase 2 (Lexer, parser, and AST): read `grammar.ebnf` and `diagnostics-and-status.md` (LEX/SYN) per `CLAUDE.md` §2's phase-reading table, plus `SPEC_AMENDMENTS.md` AM-001/AM-002, then implement the lossless-span tokenizer first (the narrowest independently verifiable slice). In Claude Code, run `/next-milestone`.
-
-Before Phase 1 is cited as having a verified CI gate rather than just an authored-and-locally-verified one, push this work (or trigger `workflow_dispatch`) so `.github/workflows/ci.yml` actually runs on a GitHub-hosted runner at least once, and record the run result/URL here. This repository only commits/pushes when the author asks.
 
 Track P remains limited to decision-closing feasibility work until DEC-001–DEC-013 are frozen.
