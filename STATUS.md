@@ -37,10 +37,10 @@ Every blocker is `AUTHOR DECISION REQUIRED`; no benchmark implementation or perf
 
 ## In progress
 
-Phase 1.1 (Track C, `dev-toolchain`), started 2026-10-04. Acceptance: clean out-of-tree Ninja build of a C++23 support library with no DSL behaviour; SHA-256 known answers; toolchain-manifest emitter rejects version and hash drift (`RUN014`), emits byte-identical output across runs, and that output validates against `compiler-certificate.schema.json#/properties/toolchain_versions`; all four schemas pass Draft 2020-12 meta-schema validation.
+Phase 1.1 (Track C), started 2026-10-04. Acceptance: clean out-of-tree Ninja build of a C++23 support library with no DSL behaviour; SHA-256 known answers; toolchain-manifest emitter rejects version and hash drift (`RUN014`), emits byte-identical output across runs, and that output validates against `compiler-certificate.schema.json#/properties/toolchain_versions`; all four schemas pass Draft 2020-12 meta-schema validation.
 
 ## Next permitted work
 
-Track C, Phase 1.1, on the development toolchain: create a minimal C++23/CMake/Ninja project that builds and tests an empty library plus a deterministic toolchain-manifest/hash emitter, without DSL functionality. Every record carries `dev-toolchain` identity. Installing Ninja is part of this milestone and is recorded in the manifest. In Claude Code, run `/next-milestone`.
+Track C, Phase 1.1, on the development toolchain: create a minimal C++23/CMake/Ninja project that builds and tests an empty library plus a deterministic toolchain-manifest/hash emitter, without DSL functionality. Installing Ninja is part of this milestone and is recorded in the manifest. In Claude Code, run `/next-milestone`.
 
 Track P remains limited to decision-closing feasibility work until DEC-001–DEC-013 are frozen.

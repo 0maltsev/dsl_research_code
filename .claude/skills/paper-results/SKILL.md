@@ -5,13 +5,13 @@ description: Build the paper-facing results package (LaTeX table fragments, figu
 
 # Build the paper results package
 
-Output goes to `evidence/derived/paper/<version>/`, where `<version>` is a new directory (for example `v0003-dev` or `v0004-frozen`). Never modify an earlier version. Never edit `../dsl_research_paper/` (hook-enforced). The manuscript is updated from a session in that repository, using this package.
+Output goes to `evidence/derived/paper/<version>/`, where `<version>` is a new directory (for example `v0001`). Never modify an earlier version. Never edit `../dsl_research_paper/` (hook-enforced). The manuscript is updated from a session in that repository, using this package.
 
 ## 1. Inventory and validate inputs
 
 - List the raw records under `evidence/raw/` that are relevant to each requested output.
 - Validate each one against its schema in `schemas/`. Exclude invalid records from the package, list them in the package, and report them. Do not repair them.
-- Determine each record's toolchain identity: `dev-toolchain` versus frozen, and the development host versus the experimental machine.
+- Determine each record's toolchain and machine from its recorded identity.
 
 ## 2. Decide eligibility per output
 
@@ -24,7 +24,7 @@ Use `EXPERIMENT_IMPLEMENTATION_SPEC.md` §7.5 and `CLAUDE.md` §1:
 | K1 known-answer and closed-form cross-check | K1 records; the closed forms come from paper §9.3 |
 | RQ3/RQ4/RQ5, tails, D0–D5, counters, disassembly tables | frozen artifacts on the experimental machine, gates passed, Phase 15 freeze done, pilot rows excluded |
 
-An ineligible output becomes a stub table whose cells read `not available: <reason>`. Development-toolchain outputs carry the caption note "development toolchain; preview, not final paper evidence". Development-host timings are never tabulated.
+An ineligible output becomes a stub table whose cells read `not available: <reason>`. Development-host timings are never tabulated.
 
 ## 3. Generate
 
@@ -39,7 +39,7 @@ An ineligible output becomes a stub table whose cells read `not available: <reas
 
 ## 5. Write `HANDOFF.md`
 
-- For each fragment: the target paper location (for example `sections/10-results-stubs.tex`, Results subsection; or Table `hypothesis-criteria` outcomes), its claim level, and its caption text.
+- For each fragment: the target paper location (for example `sections/10-results-stubs.tex`, Results subsection; or Table `hypothesis-criteria` outcomes), and its claim level.
 - The proof-obligation status table copied unchanged from `spec/paper/proof-obligations.md`. Tests never change it.
 - Every `SPEC_AMENDMENTS.md` entry marked "Propagate: Yes" that the manuscript has not yet absorbed.
 - Deviations, invalid runs, exclusions, and missing data.

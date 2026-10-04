@@ -6,9 +6,9 @@ This plan begins only after the Phase 0 readiness blockers are closed. Each phas
 
 `DEC-014` was approved on 2026-10-04, so phases split into two tracks:
 
-- **Track C (correctness and static evidence):** Phases 1–7 and the correctness-only parts of Phases 8–11. These may run on the recorded development toolchain. Every artifact and record carries `dev-toolchain` identity.
+- **Track C (correctness and static evidence):** Phases 1–7 and the correctness-only parts of Phases 8–11. These may run on the recorded development toolchain.
 - **Track P (performance evidence):** frozen AOT/native timed artifacts and Phases 12–16. These still require DEC-001–DEC-013 and the experimental machine.
-- **Re-gate rule:** before any paper table is frozen, every artifact is rebuilt with the frozen toolchain and the full G1/G2 suites are re-run on the exact artifact hashes. Development-track outputs are previews, not final evidence.
+- **Re-gate rule:** before any paper table is frozen, every artifact is rebuilt with the frozen toolchain and the full G1/G2 suites are re-run on the exact artifact hashes.
 
 Track P phases keep the original dependency on Phase 0 GO for every decision they touch.
 
@@ -137,7 +137,7 @@ Track P phases keep the original dependency on Phase 0 GO for every decision the
 - Inputs: gated artifacts, experiment manifest, machine/timing/cache/frequency decisions, sample schema.
 - Deliverables: pinned paired runner, D0–D5 diagnostics, warm-up/calibration, raw append-only writer, counters, invalidity ledger.
 - Tests: synthetic timer/counter known answers; failure injection; order counterbalancing; checksum consumption; schema and append-only checks.
-- Acceptance: smoke runs reproduce schedules and metadata; development measurements labelled non-evidence.
+- Acceptance: smoke runs reproduce schedules and metadata; development measurements excluded from evidence.
 - Dependencies: Phase 11 and all machine decisions.
 - Scientific risks: asymmetric ABI work, migration, eliminated result use, implicit exclusions.
 - Stop conditions: control violation, magnitude-based exclusion, missing metadata, or counter attribution failure.

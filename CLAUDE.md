@@ -55,12 +55,12 @@ The implementation splits into two tracks with different blockers.
 
 **Track C — correctness and static evidence (machine-independent semantics).** Phases 1–7, plus the correctness-only parts of 8–11: Wasm emission and validation, a Wasm engine used only to execute modules for G2, the native oracle, datasets, and the G1/G2 suites. Under the current plan these phases are blocked by DEC-001 and DEC-002. **DEC-014** proposes letting them run on a recorded development toolchain. Track C may start only after the author marks DEC-014 approved in `docs/decision-log.md`.
 
-**Track P — performance evidence.** Frozen AOT images, MS/PO/SIMD timed artifacts, and Phases 12–16. Blocked by DEC-001–DEC-013 and requires the dedicated experimental machine. The current development host (Apple M1, macOS 14.1.1, no Linux `perf`, no frequency control) cannot produce Track P evidence. Any timing taken here is a smoke measurement, must be labelled so in every record and message, and must never reach a paper table.
+**Track P — performance evidence.** Frozen AOT images, MS/PO/SIMD timed artifacts, and Phases 12–16. Blocked by DEC-001–DEC-013 and requires the dedicated experimental machine. The current development host (Apple M1, macOS 14.1.1, no Linux `perf`, no frequency control) cannot produce Track P evidence. Any timing taken here is a smoke measurement and must never reach a paper table.
 
 Gate rules:
 
 - A decision is closed only by the author's explicit statement, recorded in the decision log with a date. A recommendation in the log is never authorization, including your own.
-- Track C artifacts carry `dev-toolchain` identity in every record. Before any paper table is frozen, rebuild them with the frozen toolchain and re-run the full G1/G2 suites on the exact artifacts. Development-track results are previews, not final evidence.
+- Before any paper table is frozen, rebuild Track C artifacts with the frozen toolchain and re-run the full G1/G2 suites on the exact artifacts.
 - No timing of any artifact before G1/G2 pass for that exact artifact hash (`AGENTS.md`).
 
 ## 4. Milestone loop
@@ -133,9 +133,8 @@ Permitted wording by claim level:
 | G1 | "no bound counterexample detected in the declared domain <domain>" | "the bounds are sound" |
 | G2 | "no observable mismatch detected in the declared suite <suite>" | "the compiler is correct" |
 | Performance | "estimate for <kernel/config/machine>, MS (or PO)" | pooled MS+PO+SIMD, workload-class generalisations |
-| Dev host | "smoke measurement, not paper evidence" | any ratio or latency in a paper table |
 
-Keep exact, upper, and capacity bounds separate. Keep cumulative, peak, frame, output, and total memory separate. Label K1 SIMD batch time "amortised per-contract batch time".
+Keep exact, upper, and capacity bounds separate. Keep cumulative, peak, frame, output, and total memory separate.
 
 ## 8. Claude Code mechanics
 

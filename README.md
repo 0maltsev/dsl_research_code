@@ -44,5 +44,5 @@ The final command must match the immutable hashes recorded in `docs/spec-freeze/
 
 ## Claim discipline
 
-“Accepted by tests” means only that no counterexample was detected in the declared domain. It does not mean the static cost model is proved sound or the compiler is proved correct. Performance language is permitted only for frozen artifacts on the designated experimental machine after the correctness gates pass. Development-host timings must be labelled smoke measurements.
+“Accepted by tests” means only that no counterexample was detected in the declared domain. It does not mean the static cost model is proved sound or the compiler is proved correct. Performance language is permitted only for frozen artifacts on the designated experimental machine after the correctness gates pass. Development-host timings are smoke tests, not paper evidence.
 

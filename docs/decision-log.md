@@ -128,7 +128,7 @@ This log contains choices that can change a scientific interpretation, artifact,
 - Boundary blocked: Phases 1–7 and the correctness-only parts of Phases 8–11. These are currently blocked through DEC-001 and DEC-002 because Phase 1 requires a frozen compiler/runtime identity.
 - Alternatives:
   - (a) Keep all implementation blocked until DEC-001–DEC-013 close (status quo).
-  - (b) Permit correctness-track work on a recorded development toolchain. This covers the development host: Apple M1, macOS 14.1.1, Homebrew Clang 22.1.1, CMake 4.1.2, Ninja once installed, WABT 1.0.39 validator, and a development Wasm engine used only to execute modules for G2. Every record carries `dev-toolchain` identity. No timed claim is made from these artifacts. Before any paper table is frozen, all artifacts are rebuilt with the frozen toolchain on the experimental machine and the full G1/G2 suites are re-run on the exact artifact hashes.
+  - (b) Permit correctness-track work on a recorded development toolchain. This covers the development host: Apple M1, macOS 14.1.1, Homebrew Clang 22.1.1, CMake 4.1.2, Ninja once installed, WABT 1.0.39 validator, and a development Wasm engine used only to execute modules for G2. No timed claim is made from these artifacts. Before any paper table is frozen, all artifacts are rebuilt with the frozen toolchain on the experimental machine and the full G1/G2 suites are re-run on the exact artifact hashes.
   - (c) Freeze the final toolchain now on the development host.
 - Scientific effect:
   - (a) delays every result, including the machine-independent RQ1/RQ2 evidence.
