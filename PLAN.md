@@ -2,6 +2,16 @@
 
 This plan begins only after the Phase 0 readiness blockers are closed. Each phase is independently verifiable. A stop condition blocks the phase rather than authorizing an invented behavior. `spec/paper/` remains immutable throughout.
 
+## Execution tracks
+
+`DEC-014` was approved on 2026-10-04, so phases split into two tracks:
+
+- **Track C (correctness and static evidence):** Phases 1–7 and the correctness-only parts of Phases 8–11. These may run on the recorded development toolchain. Every artifact and record carries `dev-toolchain` identity.
+- **Track P (performance evidence):** frozen AOT/native timed artifacts and Phases 12–16. These still require DEC-001–DEC-013 and the experimental machine.
+- **Re-gate rule:** before any paper table is frozen, every artifact is rebuilt with the frozen toolchain and the full G1/G2 suites are re-run on the exact artifact hashes. Development-track outputs are previews, not final evidence.
+
+Track P phases keep the original dependency on Phase 0 GO for every decision they touch.
+
 ## Phase 0 — Specification freeze
 
 - Inputs: immutable paper snapshot and implementation hand-off.
@@ -10,7 +20,7 @@ This plan begins only after the Phase 0 readiness blockers are closed. Each phas
 - Acceptance: all semantic/ABI/BIR ambiguities resolved or explicit blocking author decisions; no production placeholders.
 - Dependencies: none.
 - Scientific risks: accidental paper modification; silently turning a proof obligation into a claim; freezing a material benchmark choice without authority.
-- Stop conditions: unresolved implementation semantics or material empirical choice. Current result: complete, **NO-GO** pending author decisions.
+- Stop conditions: unresolved implementation semantics or material empirical choice. Current result: complete; **GO for Track C** after `DEC-014` (2026-10-04), **NO-GO for Track P** pending DEC-001–DEC-013.
 
 ## Phase 1 — Repository and toolchain foundation
 

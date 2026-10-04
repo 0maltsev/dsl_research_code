@@ -1,6 +1,6 @@
 # Scientific decision log
 
-Last updated: 2026-08-17
+Last updated: 2026-10-04
 
 This log contains choices that can change a scientific interpretation, artifact, or comparison. A recommendation is not authorization. Every open row has status **AUTHOR DECISION REQUIRED** and blocks Phase 1 or later work at the boundary shown. No comparative measurement may be observed before all choices that affect it are frozen.
 
@@ -123,6 +123,23 @@ This log contains choices that can change a scientific interpretation, artifact,
 - Evidence required: access calendar, maintenance/change policy, and minimum-valid-session contingency.
 - Status: **AUTHOR DECISION REQUIRED**.
 
+### DEC-014 — Correctness track on a development toolchain before the performance freeze
+
+- Boundary blocked: Phases 1–7 and the correctness-only parts of Phases 8–11. These are currently blocked through DEC-001 and DEC-002 because Phase 1 requires a frozen compiler/runtime identity.
+- Alternatives:
+  - (a) Keep all implementation blocked until DEC-001–DEC-013 close (status quo).
+  - (b) Permit correctness-track work on a recorded development toolchain. This covers the development host: Apple M1, macOS 14.1.1, Homebrew Clang 22.1.1, CMake 4.1.2, Ninja once installed, WABT 1.0.39 validator, and a development Wasm engine used only to execute modules for G2. Every record carries `dev-toolchain` identity. No timed claim is made from these artifacts. Before any paper table is frozen, all artifacts are rebuilt with the frozen toolchain on the experimental machine and the full G1/G2 suites are re-run on the exact artifact hashes.
+  - (c) Freeze the final toolchain now on the development host.
+- Scientific effect:
+  - (a) delays every result, including the machine-independent RQ1/RQ2 evidence.
+  - (b) lets the source semantics, static analysis, BIR, lowering, datasets, and G1/G2 suites mature before the machine is chosen. It risks toolchain-dependent behaviour, which the mandatory frozen re-gate is designed to detect.
+  - (c) would bind RQ3–RQ5 to a laptop without Linux `perf`, frequency control, or core isolation, which conflicts with paper §9.5.
+- Recommendation: (b). Choosing it does not select the AOT runtime, compiler, machine, or floating flags for any timed artifact. DEC-001–DEC-013 remain open.
+- Evidence required: an author statement approving (b); a development toolchain manifest emitted in Phase 1; the re-gate rule recorded in `PLAN.md`; and an audit showing no development-host timing in any derived paper output.
+- Status: **APPROVED — option (b)**. Author approval given in a Claude Code session on 2026-10-04 ("approve"), in reply to the recommendation above. Track C is unblocked. DEC-001–DEC-013 remain open and continue to block Track P and every timed artifact.
+
 ## Frozen decisions
+
+- `DEC-014` (2026-10-04): correctness-track work proceeds on the recorded development toolchain under the Track C and re-gate rules in `PLAN.md`.
 
 Implementation-level semantic decisions are frozen in `docs/spec-freeze/` and traced in `SPEC_AMENDMENTS.md`. In particular: C++23/CMake/Ninja intent; no Python in production components; strict scalar source numerics; K1/K2-only explicit SIMD; three non-pooled matrices; fixed export/ABI contract; four canonical BIR capability kinds; and distinct failure classes.

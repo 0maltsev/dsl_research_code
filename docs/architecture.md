@@ -69,6 +69,18 @@ Every stage records input hashes, schema/spec versions, configuration identity, 
 13. append-only benchmark rows;
 14. deterministic derived tables and plots.
 
+## Evidence layout
+
+Generated evidence is kept apart from source and build trees:
+
+| Path | Artifact class | Rule |
+|---|---|---|
+| `evidence/raw/` | Schema-valid generated records: correctness results, compiler certificates, benchmark samples, manifests. | Append-only. A correction is a new record that references the superseded one. |
+| `evidence/derived/` | Tables, plots, and summaries regenerated deterministically from raw records by `analysis/`. | Reproducible from raw records plus script hashes. |
+| `evidence/derived/paper/<version>/` | Manuscript hand-off package: table/figure fragments, `provenance.json`, `HANDOFF.md`. | A new version per regeneration; earlier versions are never modified. |
+
+Large build artifacts (Wasm, AOT images, native binaries, disassembly) are identified by hash in records. Their storage location is fixed in Phase 1.
+
 ## Memory ownership
 
 - ABI input and output are fixed, disjoint regions in non-growing Wasm32 memory.

@@ -4,7 +4,7 @@ This repository is the planned reference implementation and experimental artifac
 
 ## Current readiness
 
-Phase 0 has frozen implementation-level language, numeric, trace, footprint, ABI, BIR, diagnostics, schema, and experiment contracts. Phase 1 is currently **NO-GO** because scientifically material toolchain and experiment choices still require author decisions. See [PHASE0_READINESS_REPORT.md](PHASE0_READINESS_REPORT.md) and [docs/decision-log.md](docs/decision-log.md).
+Phase 0 has frozen implementation-level language, numeric, trace, footprint, ABI, BIR, diagnostics, schema, and experiment contracts. Since `DEC-014` was approved (2026-10-04), the correctness track (Phases 1–7 and the correctness-only parts of 8–11) may proceed on a recorded development toolchain. Timed artifacts and Phases 12–16 remain **NO-GO** because scientifically material toolchain and experiment choices still require author decisions. See [PHASE0_READINESS_REPORT.md](PHASE0_READINESS_REPORT.md) and [docs/decision-log.md](docs/decision-log.md).
 
 ## Specification map
 
@@ -23,6 +23,7 @@ Phase 0 has frozen implementation-level language, numeric, trace, footprint, ABI
 - `docs/traceability.md`: paper-to-module-to-test-to-evidence-to-claim map.
 - `docs/decision-log.md`: unresolved scientific choices and frozen decisions.
 - `PLAN.md` and `STATUS.md`: phased execution plan and current progress.
+- `CLAUDE.md` and `.claude/`: Claude Code operating procedure, integrity hooks, milestone/results skills, and audit/independent-implementation subagents.
 - `schemas/`: Draft 2020-12 schemas for manifests, certificates, correctness results, and benchmark samples.
 
 ## Authority
