@@ -42,6 +42,7 @@ Track P phases keep the original dependency on Phase 0 GO for every decision the
 - Dependencies: Phase 1.
 - Scientific risks: surface elaboration changing operation order or primitive identity.
 - Stop conditions: grammar conflict, ambiguous parse, or missing diagnostic code.
+- Progress: **2.1 complete (2026-10-05)** — the lossless-span tokenizer (`src/source/lex`), covering `LEX001`-`LEX004`/`LEX006`/`LEX007` (`LEX005` deferred to 2.2, which has the parser context it needs). 16/16 tests pass; `spec-auditor` review found and fixed 3 process/correctness issues (an unjustified lexical overgeneralization with no grammar support, two spec ambiguities implemented without a logged amendment/author sign-off, and this progress update itself being pending) — see `STATUS.md` "Phase 2.1 evidence" and `SPEC_AMENDMENTS.md` `AM-017` (both parts author-approved as-shipped). **2.2** (parser, untyped AST, deterministic serialization) not yet started.
 
 ## Phase 3 — Static semantics and bounded-size validation
 

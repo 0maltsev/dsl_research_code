@@ -4,7 +4,7 @@ Last updated: 2026-10-05
 
 ## Current phase
 
-Phase 1 — Repository and toolchain foundation (Track C) is complete. Phase 2 — Lexer, parser, and AST has not started.
+Phase 1 — Repository and toolchain foundation (Track C) is complete. Phase 2 — Lexer, parser, and AST is in progress: 2.1 (lossless-span tokenizer) is complete; the parser/AST (2.2) has not started.
 
 Readiness: **GO for Track C** (correctness and static evidence, any development host whose toolchain is exactly recorded) since `DEC-014` was approved on 2026-10-04 and `DEC-015` confirmed its host scope on 2026-10-05. **NO-GO for Track P** (timed artifacts and Phases 12–16) pending DEC-001–DEC-013. No DSL implementation exists yet — Phase 1 is pure build/toolchain infrastructure; Phase 2 is the first phase that touches the language itself.
 
@@ -23,6 +23,7 @@ Readiness: **GO for Track C** (correctness and static evidence, any development 
 | `DEC-015` approved (2026-10-05) | Complete | Author approved option (b); `DEC-014`(b) covers any development host whose exact toolchain is recorded by the Phase 1 manifest emitter, not only the host named at `DEC-014`'s approval. |
 | Phase 1.1 (2026-10-05) | Complete | See "Phase 1.1 evidence" below; a `spec-auditor` review's two FAIL findings were fixed and re-verified (7/7 tests) before this update; its `DEC-015` finding is resolved above. |
 | Phase 1.2 / Phase 1 overall (2026-10-05) | Complete | `.github/workflows/ci.yml` authored and statically verified (`actionlint` clean) plus its full command sequence run locally end-to-end (`npm ci`, fresh configure/build, 7/7 `ctest`, snapshot check); a `spec-auditor` review returned **PASS**, no FAIL findings. Pushed to `origin/main` (commit `3c32e95`); the workflow's first real run on a GitHub-hosted `ubuntu-24.04` runner (run `37237124426`) **succeeded** — every step, including Build and Test, passed, so the audit's flagged GCC-version risk (that runner's default GCC 12–14 vs. this session's GCC 16.1.1) did not materialize. See "Phase 1.2 evidence" below. |
+| Phase 2.1 (2026-10-05) | Complete | `src/source/lex`: the full lossless-span tokenizer. See "Phase 2.1 evidence" below. A `spec-auditor` review found 3 FAIL findings, all fixed and re-verified: (1) an unjustified "0 + any letter → LEX004" overgeneralization with no grammar support, removed, narrowed back to exactly the "0x" terminal, test cases that had locked in the wrong behavior rewritten to assert the correct one; (2) two genuine spec ambiguities (the `[0,2^31-1]` numeral-range bound applying beyond literal "capacities"; `LEX007`'s undocumented trigger shapes) had been resolved by implementation without a decision-log/`SPEC_AMENDMENTS.md` entry or author sign-off — recorded as `SPEC_AMENDMENTS.md` `AM-017` and put to the author via `AskUserQuestion`; both recommended (as-shipped) options were approved, so no further code change was needed; (3) `STATUS.md`/`PLAN.md` not yet updated — this row is that update, completing the milestone loop's prescribed audit-before-record order. |
 
 ## Phase 1.1 evidence
 
@@ -53,6 +54,20 @@ Commands run and their outcomes:
 - The audit also reported, as an aside unrelated to this milestone's substance, that a tool-result in its session contained a prompt-injection attempt (an impersonated "MCP Server Instructions" block trying to direct it to create a docs artifact); it correctly disregarded this and took no action on it.
 - **First real CI run (2026-10-05, after pushing commit `3c32e95` to `origin/main`)**: [run `37237124426`](https://github.com/0maltsev/dsl_research_code/actions/runs/37237124426) on a GitHub-hosted `ubuntu-24.04` runner — **succeeded**, every step green (checkout, install Ninja/OpenSSL/Node, `npm ci`, configure, build, test, snapshot check), total job time 34s. This resolves the `spec-auditor`'s PLAUSIBLE risk: the real runner's default GCC did not trip `-Werror` differently from this session's GCC 16.1.1.
 
+## Phase 2.1 evidence
+
+`src/source/lex` (`token.hpp`: `SourceSpan`, `TokenKind` for every `grammar.ebnf` terminal, `Token`; `lexer.hpp`/`lexer.cpp`: `tokenize(std::string_view) -> LexResult`): a from-scratch, standalone-tokenizer-only lexer (no parsing/semantic recovery, per `docs/architecture.md`'s module boundary) covering every lexical diagnostic except `LEX005` (deferred to the parser/resolver, since "reserved word used where an identifier is required" needs grammatical-position context this tokenizer doesn't have). First-error design: `tokenize()` stops at the first diagnostic-worthy event and returns exactly one `LexDiagnostic`; `LEX001`/`LEX002` are whole-buffer preconditions checked before any token is attempted (so `tokens` is always empty for those two specifically), while `LEX003`/`LEX004`/`LEX006`/`LEX007` retain every token recognized strictly before the failure.
+
+Commands run this session and their outcomes:
+
+- Independently cross-checked UTF-8 test vectors (valid 1/2/3/4-byte sequences, overlong encodings, truncated/lone-continuation/invalid-lead bytes, surrogate halves, beyond-U+10FFFF, the BOM) against Node's strict `TextDecoder('utf-8', {fatal:true})` *before* writing the from-scratch `find_first_utf8_error` validator, to avoid baking a self-consistent-but-wrong implementation and its own test vectors together.
+- `cmake --preset dev && cmake --build --preset dev` — clean build, 0 warnings under `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Werror` (one real `-Wrange-loop-construct` bug caught and fixed: binding `const std::string&` to a braced list of string literals).
+- `ctest --preset dev` — 16/16 pass (7 from Phase 1 unchanged + 9 new lexer tests: keywords/identifiers, punctuation/operators, decimal numerals incl. `LEX006`, hex bit-literals incl. `LEX004`, comments/float attempts incl. `LEX007`, malformed-token incl. `LEX003`, ASCII-charset incl. `LEX002`, UTF-8/BOM incl. `LEX001`, lossless-span reconstruction plus a realistic full-module source).
+- Mutation-test sanity check: temporarily changed an expected diagnostic code in a test from `"LEX006"` to a wrong value, confirmed the suite genuinely failed with a clear mismatch, then reverted and reconfirmed 16/16 — done to rule out a vacuously-passing suite before trusting it.
+- A `spec-auditor` review independently re-verified the UTF-8 validator against Python's strict `bytes.decode("utf-8")` on 14 vectors (a second, different reference than the one used while writing it) and confirmed the algorithm itself is correct, not merely test-vector-lucky; found the 3 FAIL findings listed in the milestone row above (all fixed); and confirmed sound: the keyword table has exactly the 24 reserved words with no omissions/duplicates, every grammar terminal has a `TokenKind`, the numeral-overflow accumulation has no UB, span arithmetic is consistently half-open and non-overlapping, and the mutation-test claim is genuine (the check macros really do fail the binary, not a no-op).
+- `docs/spec-freeze/SPEC_AMENDMENTS.md` `AM-017`: both parts (the numeral-range-bound extension and the `LEX007` trigger shapes) approved by the author via `AskUserQuestion`, choosing the as-shipped behavior in both cases; no code change resulted.
+- `.claude/hooks/check-snapshot.sh session` — paper snapshot unchanged, after every change in this milestone including the post-audit fixes.
+
 ## Open blockers
 
 These block Track P only.
@@ -69,6 +84,6 @@ Every blocker above is `AUTHOR DECISION REQUIRED`; no benchmark implementation o
 
 ## Next permitted work
 
-Track C, Phase 2 (Lexer, parser, and AST): read `grammar.ebnf` and `diagnostics-and-status.md` (LEX/SYN) per `CLAUDE.md` §2's phase-reading table, plus `SPEC_AMENDMENTS.md` AM-001/AM-002, then implement the lossless-span tokenizer first (the narrowest independently verifiable slice). In Claude Code, run `/next-milestone`.
+Track C, Phase 2.2 (parser and untyped AST): build on the Phase 2.1 token stream per `grammar.ebnf`'s complete EBNF/precedence, implementing `LEX005` (reserved word where an identifier is required) along the way now that parser context exists. In Claude Code, run `/next-milestone`.
 
 Track P remains limited to decision-closing feasibility work until DEC-001–DEC-013 are frozen.
