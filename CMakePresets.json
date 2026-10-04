@@ -1,0 +1,33 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "Track C development build",
+      "description": "Out-of-tree Ninja build on this session's development toolchain, exactly recorded by boundfin-toolchain-manifest (Track C, DEC-014; host scope open as DEC-015). Not a performance artifact.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BOUNDFIN_BUILD_TESTS": "ON",
+        "BOUNDFIN_ENABLE_SANITIZERS": "ON",
+        "BOUNDFIN_WARNINGS_AS_ERRORS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    }
+  ]
+}

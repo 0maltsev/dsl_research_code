@@ -1,0 +1,12 @@
+#pragma once
+
+#include <filesystem>
+
+namespace boundfin::toolchain_manifest::config {
+
+inline const std::filesystem::path kCxxCompiler = "@CMAKE_CXX_COMPILER@";
+inline const char *const kOpenSslVersion = "@OPENSSL_VERSION@";
+inline const std::filesystem::path kOpenSslCryptoLibrary = "@OPENSSL_CRYPTO_LIBRARY@";
+inline const std::filesystem::path kRepoRoot = "@CMAKE_SOURCE_DIR@";
+
+} // namespace boundfin::toolchain_manifest::config

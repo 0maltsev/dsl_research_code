@@ -1,3 +1,7 @@
 .DS_Store
 /build/
 /.claude/settings.local.json
+/tools/schema-validate/node_modules/
+/CMakeUserPresets.json
+/CMakeCache.txt
+/CMakeFiles/

@@ -1,0 +1,70 @@
+name: Track C smoke check
+
+# Pure build/test regression check for Track C (correctness and static
+# evidence) infrastructure: configure, build, run the full test suite, and
+# verify the immutable paper snapshot, on a fresh checkout.
+#
+# This is explicitly NOT a performance artifact (PLAN.md Phase 1
+# "Deliverables: ... CI smoke checks"; CLAUDE.md / AGENTS.md draw a hard
+# line between Track C correctness evidence and Track P timed evidence): no
+# timing from this workflow may ever be cited as Track P evidence, and a
+# green run here is not itself a recorded G1/G2 result -- it only reruns
+# the same local `ctest` suite on a differently provisioned host, as a
+# regression check. It is not held to Track P's exact-pinning bar (which
+# applies to evidence-bearing timed artifacts, not to this check), though
+# runner/action versions are still pinned below to avoid silent drift in
+# what "the CI check" means from one run to the next.
+#
+# Per DEC-015 ("DEC-014 covers any development host whose exact toolchain
+# is recorded by the Phase 1 manifest emitter, not only the host named at
+# DEC-014's approval"), this runner is itself a valid Track C development
+# host: `boundfin-toolchain-manifest emit` run here would record exactly
+# this job's own toolchain identity, the same way it does in an interactive
+# session. This workflow does not do so itself -- `ctest` already exercises
+# that emitter as part of the test suite -- so no additional manifest file
+# is produced or retained from CI runs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  track-c-smoke:
+    name: Configure, build, and test (Track C)
+    # Pinned to a specific Ubuntu release image, not the floating
+    # "ubuntu-latest" alias GitHub periodically repoints to a newer LTS.
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install build toolchain (Ninja, OpenSSL headers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build libssl-dev
+
+      - name: Install Node (dev-only Draft 2020-12 meta-schema checker)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Install pinned dev-only schema tooling
+        working-directory: tools/schema-validate
+        run: npm ci
+
+      - name: Configure (Track C development build)
+        run: cmake --preset dev
+
+      - name: Build
+        run: cmake --build --preset dev
+
+      - name: Test
+        run: ctest --preset dev --output-on-failure
+
+      - name: Verify the immutable paper snapshot
+        run: .claude/hooks/check-snapshot.sh session

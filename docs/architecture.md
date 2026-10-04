@@ -27,6 +27,8 @@ The explicit-SIMD branch starts from validated BIR, applies only to K1/K2, emits
 
 | Planned path | Responsibility | Must not own |
 |---|---|---|
+| `src/support` | Host-independent utilities shared by every stage: SHA-256 (`sha256.hpp`), generated-record validation against `schemas/*.schema.json` (`record_schema.hpp`). Implemented (Phase 1.1). | DSL semantics, cost accounting, or any source/BIR/Wasm decision. |
+| `src/toolchain_manifest` | Build-toolchain identity: probes cmake/ninja/the configured C++ compiler/OpenSSL/node/npm and the dev-only schema-meta-validation npm packages, emits a schema-valid `toolchain_versions` record, and detects version/hash drift (RUN014). Implemented (Phase 1.1). | DSL semantics; declaring a toolchain frozen (that is DEC-001/DEC-002, not this module). |
 | `src/source/lex` | UTF-8/token validation and source spans | Parsing or semantic recovery. |
 | `src/source/parse` | Concrete grammar to untyped AST | Name, type, size, or cost decisions. |
 | `src/source/resolve` | Symbols, alpha-renaming, declaration ranks | Type inference or implicit conversion. |

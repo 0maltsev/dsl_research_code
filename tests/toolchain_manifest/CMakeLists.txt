@@ -1,0 +1,24 @@
+boundfin_add_test(extract_first_version_token_from_real_tool_output test_version_token_extraction.cpp)
+target_link_libraries(extract_first_version_token_from_real_tool_output PRIVATE boundfin_toolchain_manifest)
+
+boundfin_add_test(toolchain_manifest_emit_is_byte_identical_across_runs test_manifest_determinism.cpp)
+target_link_libraries(toolchain_manifest_emit_is_byte_identical_across_runs PRIVATE boundfin_toolchain_manifest)
+target_compile_definitions(toolchain_manifest_emit_is_byte_identical_across_runs PRIVATE
+  BOUNDFIN_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
+  BOUNDFIN_OPENSSL_VERSION="${OPENSSL_VERSION}"
+  BOUNDFIN_OPENSSL_CRYPTO_LIBRARY="${OPENSSL_CRYPTO_LIBRARY}"
+  BOUNDFIN_REPO_ROOT="${CMAKE_SOURCE_DIR}"
+)
+
+boundfin_add_test(toolchain_manifest_output_validates_against_schema test_manifest_schema_valid.cpp)
+target_link_libraries(toolchain_manifest_output_validates_against_schema PRIVATE boundfin_toolchain_manifest)
+target_compile_definitions(toolchain_manifest_output_validates_against_schema PRIVATE
+  BOUNDFIN_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
+  BOUNDFIN_OPENSSL_VERSION="${OPENSSL_VERSION}"
+  BOUNDFIN_OPENSSL_CRYPTO_LIBRARY="${OPENSSL_CRYPTO_LIBRARY}"
+  BOUNDFIN_REPO_ROOT="${CMAKE_SOURCE_DIR}"
+  BOUNDFIN_SCHEMAS_DIR="${CMAKE_SOURCE_DIR}/schemas"
+)
+
+boundfin_add_test(RUN014_toolchain_manifest_drift_rejected test_manifest_drift_rejected.cpp)
+target_link_libraries(RUN014_toolchain_manifest_drift_rejected PRIVATE boundfin_toolchain_manifest)

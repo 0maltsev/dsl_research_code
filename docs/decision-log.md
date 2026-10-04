@@ -1,6 +1,6 @@
 # Scientific decision log
 
-Last updated: 2026-10-04
+Last updated: 2026-10-05
 
 This log contains choices that can change a scientific interpretation, artifact, or comparison. A recommendation is not authorization. Every open row has status **AUTHOR DECISION REQUIRED** and blocks Phase 1 or later work at the boundary shown. No comparative measurement may be observed before all choices that affect it are frozen.
 
@@ -138,8 +138,25 @@ This log contains choices that can change a scientific interpretation, artifact,
 - Evidence required: an author statement approving (b); a development toolchain manifest emitted in Phase 1; the re-gate rule recorded in `PLAN.md`; and an audit showing no development-host timing in any derived paper output.
 - Status: **APPROVED — option (b)**. Author approval given in a Claude Code session on 2026-10-04 ("approve"), in reply to the recommendation above. Track C is unblocked. DEC-001–DEC-013 remain open and continue to block Track P and every timed artifact.
 
+### DEC-015 — Whether DEC-014's "recorded development toolchain" names one specific host or any exactly-recorded host
+
+- Boundary blocked: whether Phase 1.1's Track C evidence (and any later Track C work done on a host other than the one DEC-014 names) counts as covered by `DEC-014`'s approval, pending this decision.
+- Context: `DEC-014` option (b)'s approved text reads "This covers the development host: Apple M1, macOS 14.1.1, Homebrew Clang 22.1.1, CMake 4.1.2, Ninja once installed, WABT 1.0.39 validator...". Phase 1.1 was implemented and tested in a Claude Code session running on a categorically different machine: Linux x86_64 (Arch Linux), CMake 4.3.3, Ninja 1.13.2 (already present, not installed as part of the milestone, unlike STATUS.md's anticipated "Installing Ninja is part of this milestone"), and GCC 16.1.1 at `/usr/bin/c++` (not Clang at all, let alone Homebrew Clang 22.1.1). The session proceeded without stopping, reasoning informally that DEC-014(b)'s purpose is "permit correctness-track work on a recorded development toolchain" with Phase 1 being exactly where that toolchain gets recorded, not a restriction to one named physical machine; a `spec-auditor` review of the milestone disagreed and flagged this as a FAIL, since that reasoning was never logged or put to the author per the stop-and-ask protocol (`CLAUDE.md` §5), and version/host drift is Phase 1's explicitly named scientific risk (`PLAN.md`).
+- Alternatives:
+  - (a) Strict scope: `DEC-014`(b) covers only the named Apple M1/macOS/Homebrew Clang host. This session's Phase 1.1 evidence does not count toward `DEC-014` and must be reproduced on that exact host (or a newly and explicitly approved host) before any later milestone treats Phase 1 as satisfying its Track C gate.
+  - (b) General scope: `DEC-014`(b) permits correctness-track work on *any* host whose exact toolchain identity is captured by the Phase 1 manifest emitter, not only the one named at approval time; the macOS/M1 description was the state observed when the recommendation was written, not an enumerated restriction.
+  - (c) Additive scope: approve this Linux host as a second, explicitly named recorded development toolchain alongside the original macOS one (both individually valid, no open-ended "any host" authorization).
+- Scientific effect:
+  - (a) is the most conservative reading of what was literally approved, but makes Track C unable to proceed in any session that does not run on that exact laptop — which may be most or all Claude Code sessions — effectively re-blocking Phase 1 work pending host access.
+  - (b) lets Track C proceed wherever a session happens to run, which may vary between sessions/days, at the cost of a broader authorization than the literal approved text; the mandatory frozen re-gate before any paper table already bounds the risk this creates, since no Track C development-host artifact is ever treated as a timed or paper-facing result regardless of which host produced it.
+  - (c) is narrower than (b) (no open-ended future hosts) but requires a fresh decision-log entry and author approval every time the working host changes, which is likely to recur often in an agentic-session environment.
+- Recommendation: (b), because Phase 1's acceptance criterion is literally "exact toolchain identity emitted" — the manifest is the mechanism that makes the recording exact regardless of which host produced it — and DEC-014's own stated purpose ("lets the source semantics, static analysis, BIR, lowering, datasets, and G1/G2 suites mature before the machine is chosen") reads as host-agnostic by design. The mandatory re-gate rule already means no development-host artifact, on any host, ever reaches a paper table without being rebuilt and re-gated on the frozen toolchain.
+- Evidence required: an author statement choosing (a), (b), or (c). If (b) or (c): an explicit note added to `STATUS.md` that Track C evidence may span multiple development hosts, each exactly recorded via the Phase 1 toolchain manifest, with no change to the DEC-001–DEC-013 performance-track gates.
+- Status: **APPROVED — option (b)**. Author approval given in a Claude Code session on 2026-10-05, in reply to the recommendation above (AskUserQuestion, "Any recorded host (Recommended)"). `DEC-014`(b) covers correctness-track work on any development host whose exact toolchain identity is captured by the Phase 1 manifest emitter, not only the host named at `DEC-014`'s approval. This Linux host's Phase 1.1 evidence counts as `DEC-014` Track C evidence. DEC-001–DEC-013 remain open and continue to block Track P and every timed artifact; the mandatory re-gate on the frozen toolchain before any paper table is unaffected.
+
 ## Frozen decisions
 
 - `DEC-014` (2026-10-04): correctness-track work proceeds on the recorded development toolchain under the Track C and re-gate rules in `PLAN.md`.
+- `DEC-015` (2026-10-05): `DEC-014`(b) covers any development host whose exact toolchain is recorded by the Phase 1 manifest emitter, not only the host named at `DEC-014`'s approval.
 
 Implementation-level semantic decisions are frozen in `docs/spec-freeze/` and traced in `SPEC_AMENDMENTS.md`. In particular: C++23/CMake/Ninja intent; no Python in production components; strict scalar source numerics; K1/K2-only explicit SIMD; three non-pooled matrices; fixed export/ABI contract; four canonical BIR capability kinds; and distinct failure classes.

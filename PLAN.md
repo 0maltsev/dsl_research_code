@@ -31,6 +31,7 @@ Track P phases keep the original dependency on Phase 0 GO for every decision the
 - Dependencies: Phase 0 GO.
 - Scientific risks: version drift, hidden host defaults, non-reproducible paths/timestamps.
 - Stop conditions: Ninja or required exact tools unavailable; compiler/runtime choice not frozen; manifest nondeterminism.
+- Progress: **Complete (2026-10-05)**. **1.1**: minimal C++23/CMake/Ninja project, support library (SHA-256, schema-fragment validation), toolchain-manifest library/CLI with RUN014 drift detection, and the dependency policy, all passing their tests (see `STATUS.md` "Phase 1.1 evidence"). The "version drift, hidden host defaults" risk this phase names materialized directly: Phase 1.1 was built on a host other than the one `DEC-014` named, which raised `DEC-015` ("does `DEC-014` cover any exactly-recorded host, or only the named one?"); the author approved the general reading (option (b)), so this host's evidence counts. **1.2**: `.github/workflows/ci.yml`, the last Phase 1 deliverable, authored and statically verified (`actionlint` clean) plus its command sequence run locally end-to-end; `spec-auditor` review PASS. Acceptance criteria met on this (and, per `DEC-015`, any exactly-recorded) development host: clean out-of-tree Ninja build, no DSL behavior, exact toolchain identity emitted and schema-valid. One caveat: the CI workflow has not yet executed on a real GitHub-hosted runner (needs a push this session was not asked to make) — see `STATUS.md` "Next permitted work."
 
 ## Phase 2 — Lexer, parser, and AST
 

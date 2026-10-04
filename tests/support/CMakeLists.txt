@@ -1,0 +1,6 @@
+boundfin_add_test(SHA256_known_answers test_sha256_known_answers.cpp)
+
+boundfin_add_test(record_schema_toolchain_versions_subschema test_record_schema_validation.cpp)
+target_compile_definitions(record_schema_toolchain_versions_subschema PRIVATE
+  BOUNDFIN_SCHEMAS_DIR="${CMAKE_SOURCE_DIR}/schemas"
+)
