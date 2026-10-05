@@ -18,6 +18,7 @@ endfunction()
 add_subdirectory(support)
 add_subdirectory(toolchain_manifest)
 add_subdirectory(source/lex)
+add_subdirectory(source/parse)
 
 # Dev-only Draft 2020-12 meta-schema conformance check for schemas/*.schema.json.
 # Runs Node + ajv (pinned in tools/schema-validate/); it is not part of the

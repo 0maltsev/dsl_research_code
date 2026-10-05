@@ -1,0 +1,12 @@
+function(boundfin_add_parse_test name)
+  boundfin_add_test(${name} ${ARGN})
+  target_link_libraries(${name} PRIVATE boundfin_source_parse boundfin_source_ast)
+endfunction()
+
+boundfin_add_parse_test(boundfin_parse_declarations_types_and_module test_parse_declarations_types_and_module.cpp)
+boundfin_add_parse_test(boundfin_parse_literals_and_names test_parse_literals_and_names.cpp)
+boundfin_add_parse_test(boundfin_parse_operators_and_precedence test_parse_operators_and_precedence.cpp)
+boundfin_add_parse_test(boundfin_parse_let_if_fold_build test_parse_let_if_fold_build.cpp)
+boundfin_add_parse_test(boundfin_parse_arrays_products_proj_index_len test_parse_arrays_products_proj_index_len.cpp)
+boundfin_add_parse_test(boundfin_parse_lex_error_propagation test_parse_lex_error_propagation.cpp)
+boundfin_add_parse_test(boundfin_parse_roundtrip test_parse_roundtrip.cpp)
