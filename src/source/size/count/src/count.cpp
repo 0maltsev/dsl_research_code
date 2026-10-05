@@ -208,4 +208,38 @@ CountOutcome infer_count(const ast::Expr &expr, const IndexContext &index_contex
   return infer_count_impl(expr, index_context);
 }
 
+// T-Fold/T-Build's shared count-admissibility premise (main.pdf Sec. 4.2,
+// p.11): "Sigma;Delta;Gamma |-cnt en => (lambda_n,u_n;nu_n)" then
+// "Delta |-cert u_n<=N". See count.hpp's doc comment for the full design
+// (why ClosedEval here is conservative, not unsound; why nu_n/Delta_n are
+// not constructed by this function).
+AdmissibilityOutcome check_count_admissibility(const ast::Expr &count_expr, std::uint32_t capacity,
+                                                ast::BindingId index_binding_id, const IndexContext &outer_context) {
+  const auto count_outcome = infer_count(count_expr, outer_context);
+  if (!count_outcome.ok) {
+    return AdmissibilityOutcome{false, std::nullopt, count_outcome.diagnostic};
+  }
+  const auto capacity_term = certificate::make_literal(capacity);
+  const auto obligation = certificate::cert_closed_eval(
+      certificate::Constraint{certificate::ConstraintKind::Le, count_outcome.result->upper, capacity_term});
+  const auto check = certificate::check_certificate(obligation, {});
+  if (!check.ok) {
+    return AdmissibilityOutcome{false, std::nullopt,
+                                 CountDiagnostic{"SIZ005", count_expr.span,
+                                                 "count upper bound is not proved within capacity: " +
+                                                     *check.failure_reason}};
+  }
+  // The "idx#" prefix is this call site's own namespace, not yet
+  // reserved anywhere else: main.pdf p.10 says the Symbol/term namespace
+  // is shared across ABI lengths, count results, and bound indices
+  // ("xi ranges over ABI lengths, count results, and bound indices"), so
+  // once a second make_symbol call site exists (e.g. for C-ABI's ABI
+  // length symbols), its prefix must be provably disjoint from this one
+  // -- terms_equal compares Symbol names purely structurally, so two
+  // different quantities sharing a name would silently alias under it,
+  // the same defect *shape* AM-025 already had to fix once for C-Sub.
+  const auto symbol = certificate::make_symbol("idx#" + std::to_string(index_binding_id));
+  return AdmissibilityOutcome{true, IndexBinding{symbol, count_outcome.result->upper}, std::nullopt};
+}
+
 } // namespace boundfin::source::size::count

@@ -98,12 +98,12 @@ struct CountOutcome {
 // traversal (deferred to a later slice, AM-026) -- a caller exercising
 // C-Idx builds and supplies it directly.
 //
-// This is Phase 3.4's third slice: it implements 6 of Table 6's 10
-// rules -- C-Const, C-If-E, C-If-U, C-Add, C-Sub, C-Idx (AM-023, AM-024,
-// AM-025, AM-026) -- see STATUS.md's Phase 3.4 entry for why the other 4
-// (C-ABI, C-Len-E, C-Len-U, C-Call) are deferred rather than guessed.
-// Every expression kind/operator not covered by an implemented rule
-// raises `SIZ003` ("Expression has no accepted count-refinement rule"),
+// Phase 3.4 implements 6 of Table 6's 10 rules so far -- C-Const,
+// C-If-E, C-If-U, C-Add, C-Sub, C-Idx (AM-023, AM-024, AM-025, AM-026)
+// -- see STATUS.md's Phase 3.4 entry for why the other 4 (C-ABI,
+// C-Len-E, C-Len-U, C-Call) are deferred rather than guessed. Every
+// expression kind/operator not covered by an implemented rule raises
+// `SIZ003` ("Expression has no accepted count-refinement rule"),
 // matching the paper's own closing statement for Table 6 (p.37): "No
 // other expression derives a count refinement." `C-Add`/`C-Sub`
 // specifically can instead raise `SIZ006` ("Count add/sub lacks the
@@ -114,5 +114,47 @@ struct CountOutcome {
 // (certifying only "u2<=u1" let a deterministically-underflowing nested
 // subtraction, (10-9)-2, through as ok=true).
 [[nodiscard]] CountOutcome infer_count(const ast::Expr &expr, const IndexContext &index_context = {});
+
+struct AdmissibilityOutcome {
+  bool ok = false;
+  std::optional<IndexBinding> binding; // the (symbol, u_n) pair for the index binder, on success
+  std::optional<CountDiagnostic> diagnostic;
+};
+
+// Checks the count-admissibility premise T-Fold and T-Build share beyond
+// ordinary typing (main.pdf Sec. 4.2, p.11): "Sigma;Delta;Gamma |-cnt en
+// => (lambda_n,u_n;nu_n)" then "Delta |-cert u_n<=N". Infers a count
+// refinement for `count_expr` (the fold/build's own count subexpression;
+// `outer_context` lets `count_expr` itself reference an *enclosing*
+// fold/build's index binder, e.g. a nested fold whose count is a bare
+// reference to an outer index), certifies the result's upper bound
+// against `capacity` (the declared N) via ClosedEval -- conservative,
+// not unsound, when the upper bound involves a symbol inherited from
+// `outer_context` that cannot be reduced to a closed value (main.pdf
+// p.10: "A true formula for which no accepted certificate is supplied
+// is conservatively rejected") -- and, on success, mints a symbol for
+// `index_binding_id` named deterministically from the id itself (never a
+// fixed/reused literal, per the third slice's documented requirement)
+// for the caller to add to the `IndexContext` it threads into the body.
+//
+// Does not itself mint nu_n or construct Delta_n (main.pdf's
+// Delta_n = Delta u {0<=nu_n<=u_n<=N}): this function only computes the
+// IndexContext extension C-Idx needs, not a general certificate-
+// hypothesis set for the body's own nested certificates (AM-026 defers
+// that). Nor does it walk `count_expr`'s enclosing module looking for
+// further fold/build nodes to check -- it checks exactly one given
+// count expression/capacity/index-binding triple, directly testable on
+// an AST node extracted from a parsed-resolved-typechecked module. Not
+// yet invoked from `typecheck` or any module-wide traversal.
+//
+// Trust boundary: `index_binding_id` is taken as given, not verified
+// against `count_expr`/`capacity` -- nothing here checks it is actually
+// *the* fold/build these belong to (mirrors `check_certificate` trusting
+// its caller-supplied `delta`, already an accepted pattern). The future
+// slice that wires this into live `FoldExpr`/`BuildExpr` traversal must
+// always pass the matching triple from the same AST node.
+[[nodiscard]] AdmissibilityOutcome check_count_admissibility(const ast::Expr &count_expr, std::uint32_t capacity,
+                                                              ast::BindingId index_binding_id,
+                                                              const IndexContext &outer_context = {});
 
 } // namespace boundfin::source::size::count
