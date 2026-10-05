@@ -28,7 +28,12 @@ using BindingId = std::uint64_t;
 enum class TypeKind { Bool, I32, I64, F64, Array, Product };
 
 struct Type;
-using TypePtr = std::unique_ptr<Type>;
+// shared_ptr, not unique_ptr: src/source/typecheck (Phase 3.2) attaches an
+// inferred Type to every Expr node (Table 7's judgment types every
+// subexpression), and the same Type is frequently shared structurally (many
+// expressions have type "i32"; a variable's type is exactly its binding
+// site's type) rather than needing a fresh deep copy per attachment.
+using TypePtr = std::shared_ptr<Type>;
 
 struct ArrayType {
   TypePtr element;
@@ -103,10 +108,61 @@ struct BuildExpr {
   std::optional<BindingId> index_binding = std::nullopt; // set by src/source/resolve
 };
 
+// The exact monomorphic primitive (paper Table 5) a generic UnaryPrimitiveOp/
+// BinaryPrimitiveOp resolves to once operand types are known: set by
+// src/source/typecheck (Phase 3.2). "_32"/"_64" name the integer width;
+// "f"-prefixed names are the f64 variants listed in Table 5. There is no
+// integer "abs": UnaryPrimitiveOp::Abs always monomorphizes to FAbs
+// (grammar.ebnf: "abs(x) -> fabs and requires f64").
+enum class MonomorphicPrimitive {
+  BoolNot,
+  BoolAnd,
+  BoolOr,
+  BoolEq,
+  BoolNe,
+  Neg32,
+  Neg64,
+  Add32,
+  Add64,
+  Sub32,
+  Sub64,
+  Mul32,
+  Mul64,
+  DivS32,
+  DivS64,
+  RemS32,
+  RemS64,
+  Eq32,
+  Eq64,
+  Ne32,
+  Ne64,
+  LtS32,
+  LtS64,
+  LeS32,
+  LeS64,
+  GtS32,
+  GtS64,
+  GeS32,
+  GeS64,
+  FNeg,
+  FAbs,
+  FAdd,
+  FSub,
+  FMul,
+  FDiv,
+  FEq,
+  FNe,
+  FLt,
+  FLe,
+  FGt,
+  FGe,
+};
+
 enum class UnaryPrimitiveOp { Not, Neg, Abs };
 struct UnaryPrimitiveExpr {
   UnaryPrimitiveOp op = UnaryPrimitiveOp::Not;
   ExprPtr operand;
+  std::optional<MonomorphicPrimitive> resolved_primitive = std::nullopt; // set by src/source/typecheck
 };
 
 enum class BinaryPrimitiveOp { And, Or, Add, Sub, Mul, Div, Rem, Eq, Ne, Lt, Le, Gt, Ge };
@@ -114,6 +170,7 @@ struct BinaryPrimitiveExpr {
   BinaryPrimitiveOp op = BinaryPrimitiveOp::Add;
   ExprPtr lhs;
   ExprPtr rhs;
+  std::optional<MonomorphicPrimitive> resolved_primitive = std::nullopt; // set by src/source/typecheck
 };
 
 // A bare identifier with no call parens (grammar.ebnf `name-expression`
@@ -199,6 +256,10 @@ struct Expr {
   std::variant<LetExpr, IfExpr, FoldExpr, BuildExpr, UnaryPrimitiveExpr, BinaryPrimitiveExpr, VarExpr, CallExpr,
                ArrayLiteralExpr, ProductExpr, LenExpr, ProjExpr, IndexExpr, LiteralExpr>
       data;
+  // The type assigned by Table 7's judgment (paper App. A.5): set by
+  // src/source/typecheck (Phase 3.2) on every expression node, of every kind,
+  // once typechecking succeeds. std::nullopt before typecheck runs.
+  std::optional<TypePtr> inferred_type = std::nullopt;
 };
 
 // --- Declarations and module (grammar.ebnf `module`) ------------------------
