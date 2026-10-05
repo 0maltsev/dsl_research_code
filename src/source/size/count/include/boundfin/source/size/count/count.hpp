@@ -21,9 +21,14 @@ using boundfin::source::ast::SourceSpan;
 //
 // The judgment's third component, nu (the expression's own real
 // nonnegative signed runtime value), is deliberately not represented
-// here: none of the 3 rules this slice implements (C-Const/C-If-E/
-// C-If-U) ever needs nu as an explicit term in its own premises or
-// result construction. This is *not* true of Table 6 as a whole --
+// here: none of the rules this slice implements (C-Const/C-If-E/C-If-U/
+// C-Add/C-Sub) ever needs nu as an explicit term in its own premises or
+// result construction -- C-Add's certificate obligation is phrased over
+// u (AM-023), and C-Sub's corrected obligation (AM-025, after AM-023's
+// original "u2<=cert u1" reading was found unsound -- see infer_sub's
+// own comment in count.cpp) is phrased over `exact` (lambda1), which is
+// already tracked here, not a fresh nu. This is *not* true of Table 6 as
+// a whole --
 // C-Idx's premise ("body index i under 0<=i<nu_n<=u_n", main.pdf p.38)
 // explicitly references nu_n, so whether CountResult needs a nu-bearing
 // field (vs. e.g. a fresh symbol synthesized at the T-Fold/T-Build call
@@ -57,13 +62,21 @@ struct CountOutcome {
 // or re-check typing (e.g. C-If's "guard Boolean" premise is trusted
 // from Phase 3.2's own T-If check, not re-verified here).
 //
-// This is one slice of Phase 3.4: it implements exactly 3 of Table 6's
-// 10 rules -- C-Const, C-If-E, C-If-U -- see STATUS.md's Phase 3.4 entry
-// for why the other 7 are deferred rather than guessed. Every
-// expression kind not covered by an implemented rule raises `SIZ003`
-// ("Expression has no accepted count-refinement rule"), matching the
-// paper's own closing statement for Table 6 (p.37): "No other
-// expression derives a count refinement."
+// This is Phase 3.4's second slice: it implements 5 of Table 6's 10
+// rules -- C-Const, C-If-E, C-If-U, C-Add, C-Sub (AM-023, AM-024,
+// AM-025) -- see STATUS.md's Phase 3.4 entry for why the other 5
+// (C-Idx, C-ABI, C-Len-E, C-Len-U, C-Call) are deferred rather than
+// guessed. Every expression kind/operator not covered by an implemented
+// rule raises `SIZ003` ("Expression has no accepted count-refinement
+// rule"), matching the paper's own closing statement for Table 6 (p.37):
+// "No other expression derives a count refinement." `C-Add`/`C-Sub`
+// specifically can instead raise `SIZ006` ("Count add/sub lacks the
+// required no-wrap/nonnegative certificate") when their own premise's
+// certificate obligation fails -- AM-023 for C-Add; AM-025 for C-Sub,
+// correcting AM-023's original C-Sub reading after a spec-auditor review
+// found and this session independently reproduced a real soundness bug
+// (certifying only "u2<=u1" let a deterministically-underflowing nested
+// subtraction, (10-9)-2, through as ok=true).
 [[nodiscard]] CountOutcome infer_count(const ast::Expr &expr);
 
 } // namespace boundfin::source::size::count

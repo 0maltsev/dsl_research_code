@@ -57,6 +57,18 @@ TermPtr make_max(TermPtr lhs, TermPtr rhs);
 
 [[nodiscard]] bool terms_equal(const Term &a, const Term &b);
 
+// Evaluates a closed (symbol-free) term to its exact natural-number
+// value. Returns std::nullopt if the term contains a Symbol (or a
+// null/malformed child) anywhere, or if exact evaluation would overflow
+// std::uint64_t (rejected, not wrapped -- see the identical note on
+// CLOSED_EVAL's own use of this in certificate.cpp). Exposed publicly
+// (originally internal to this module's CLOSED_EVAL certificate case)
+// because src/source/size/count's C-Sub (Phase 3.4, AM-024) needs the
+// same closed-reduction to compute an exact subtraction result, which
+// the term grammar (t::=n|xi|t+t|kt, no subtraction production) cannot
+// represent symbolically the way C-Add's t+t can.
+[[nodiscard]] std::optional<std::uint64_t> evaluate_closed(const Term &term);
+
 // --- Constraints (main.pdf Sec. 4.2: "A constraint is t = t, t <= t, or a
 // finite conjunction of constraints; Delta is a finite set of them.") A
 // finite conjunction is represented at the call site as several separate

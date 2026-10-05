@@ -173,8 +173,6 @@ CertificatePtr cert_eq_sandwich(CertificatePtr le_forward, CertificatePtr le_bac
 
 namespace {
 
-std::optional<std::uint64_t> evaluate_closed(const Term &term);
-
 // Null-tolerant: a null child is malformed and cannot be evaluated (never
 // crashes; returns std::nullopt like any other "not closed" case).
 std::optional<std::uint64_t> evaluate_closed_ptr(const TermPtr &term) {
@@ -184,7 +182,12 @@ std::optional<std::uint64_t> evaluate_closed_ptr(const TermPtr &term) {
   return evaluate_closed(*term);
 }
 
-// Evaluates a closed (symbol-free) term to its exact natural-number value.
+CheckOutcome fail(std::string reason) { return CheckOutcome{false, std::nullopt, std::move(reason)}; }
+
+CheckOutcome ok_with(Constraint proved) { return CheckOutcome{true, std::move(proved), std::nullopt}; }
+
+} // namespace
+
 // Returns std::nullopt if the term contains a Symbol (or a null/malformed
 // child) anywhere, or if exact evaluation would overflow std::uint64_t
 // (rejected, not wrapped: this is mathematical-integer evaluation per
@@ -239,12 +242,6 @@ std::optional<std::uint64_t> evaluate_closed(const Term &term) {
   }
   return std::nullopt;
 }
-
-CheckOutcome fail(std::string reason) { return CheckOutcome{false, std::nullopt, std::move(reason)}; }
-
-CheckOutcome ok_with(Constraint proved) { return CheckOutcome{true, std::move(proved), std::nullopt}; }
-
-} // namespace
 
 CheckOutcome check_certificate(const CertificatePtr &certificate, const std::vector<Constraint> &delta) {
   if (!certificate) {

@@ -7,3 +7,4 @@ endfunction()
 
 boundfin_add_count_test(boundfin_count_const test_count_const.cpp)
 boundfin_add_count_test(boundfin_count_if test_count_if.cpp)
+boundfin_add_count_test(boundfin_count_add_sub test_count_add_sub.cpp)
