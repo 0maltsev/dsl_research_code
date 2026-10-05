@@ -53,6 +53,7 @@ Track P phases keep the original dependency on Phase 0 GO for every decision the
 - Dependencies: Phase 2.
 - Scientific risks: trusting modular arithmetic or solver results; losing exactness unsafely.
 - Stop conditions: unrepresented source form, unproved count, non-total layout/shape, or call-summary ambiguity.
+- Progress: **3.1 complete (2026-10-05)** — the resolver (`src/source/resolve`): name resolution, alpha-renaming (mutating the Phase 2.2 AST in place via new optional fields), declaration ranks, and call-graph acyclicity (paper §4.1's `f ≺_M g`, read directly from `spec/paper/main.pdf` pp. 7-14). Implements `NAM001`-`NAM007` and `EFF004` (self-recursion). 29/29 tests pass; `spec-auditor` review found and fixed 1 issue (the `EFF004`-vs-`NAM006` split for self-calls had been implemented without a logged amendment/author sign-off, the third instance of this exact failure class this phase after `AM-017`/`AM-018`) — see `STATUS.md` "Phase 3.1 evidence" and `SPEC_AMENDMENTS.md` `AM-019` (author-approved as-shipped). **3.2** (typecheck, Table 7 typing rules) not yet started; **3.3+** (count/size, certificate checker) not yet started.
 
 ## Phase 4 — Reference evaluator and dynamic cost traces
 

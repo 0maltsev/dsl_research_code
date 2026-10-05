@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -11,6 +12,16 @@
 namespace boundfin::source::ast {
 
 using boundfin::source::lex::SourceSpan;
+
+// A stable identity for one name-introducing binding occurrence (a
+// parameter, a let-bound name, a fold accumulator/index, or a build index),
+// assigned by src/source/resolve (Phase 3.1). grammar.ebnf's static
+// constraint 4 requires these names to be "resolved and alpha-renamed":
+// two bindings that happen to share a surface spelling (lexical shadowing)
+// get different BindingIds, and every use (VarExpr/CallExpr) records which
+// specific binding/declaration it resolves to. Unset (std::nullopt) until
+// resolution runs; the parser never sets these.
+using BindingId = std::uint64_t;
 
 // --- Types (grammar.ebnf `type`) -------------------------------------------
 
@@ -55,6 +66,7 @@ struct LetExpr {
   SourceSpan name_span;
   ExprPtr bound;
   ExprPtr body;
+  std::optional<BindingId> binding = std::nullopt; // set by src/source/resolve
 };
 
 struct IfExpr {
@@ -77,6 +89,8 @@ struct FoldExpr {
   SourceSpan index_name_span;
   ExprPtr initial;
   ExprPtr body;
+  std::optional<BindingId> accumulator_binding = std::nullopt; // set by src/source/resolve
+  std::optional<BindingId> index_binding = std::nullopt;       // set by src/source/resolve
 };
 
 // grammar.ebnf: `build<capacity>(count; index_name; body)`.
@@ -86,6 +100,7 @@ struct BuildExpr {
   std::string index_name;
   SourceSpan index_name_span;
   ExprPtr body;
+  std::optional<BindingId> index_binding = std::nullopt; // set by src/source/resolve
 };
 
 enum class UnaryPrimitiveOp { Not, Neg, Abs };
@@ -106,6 +121,7 @@ struct BinaryPrimitiveExpr {
 struct VarExpr {
   std::string name;
   SourceSpan name_span;
+  std::optional<BindingId> resolved_binding = std::nullopt; // set by src/source/resolve
 };
 
 // An identifier with call parens present, zero or more arguments (AM-002:
@@ -114,6 +130,12 @@ struct CallExpr {
   std::string callee;
   SourceSpan callee_span;
   std::vector<ExprPtr> arguments;
+  // The callee's 0-based declaration rank (source order): set by
+  // src/source/resolve once it has confirmed the call target is declared
+  // strictly before the caller (paper Sec. 4.1's "f precedes_M g" rule;
+  // "f (x1:t1,...): t = e" is declaration f, "precedes_M" is strict
+  // source order) holds for this call.
+  std::optional<std::size_t> resolved_callee_rank = std::nullopt;
 };
 
 struct ArrayLiteralExpr {
@@ -186,6 +208,7 @@ struct Parameter {
   SourceSpan name_span;
   TypePtr type;
   SourceSpan span;
+  std::optional<BindingId> binding = std::nullopt; // set by src/source/resolve
 };
 
 struct FunctionDecl {
@@ -201,6 +224,10 @@ struct ExportDecl {
   std::string name;
   SourceSpan name_span;
   SourceSpan span;
+  // The exported function's 0-based declaration rank: set by
+  // src/source/resolve once it has confirmed the export names a declared
+  // function (NAM005 otherwise).
+  std::optional<std::size_t> resolved_target_rank = std::nullopt;
 };
 
 struct Module {

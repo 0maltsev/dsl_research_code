@@ -1,0 +1,11 @@
+function(boundfin_add_resolve_test name)
+  boundfin_add_test(${name} ${ARGN})
+  target_link_libraries(${name} PRIVATE boundfin_source_resolve boundfin_source_parse boundfin_source_ast)
+endfunction()
+
+boundfin_add_resolve_test(boundfin_resolve_function_table test_resolve_function_table.cpp)
+boundfin_add_resolve_test(boundfin_resolve_variable_binding test_resolve_variable_binding.cpp)
+boundfin_add_resolve_test(boundfin_resolve_binders test_resolve_binders.cpp)
+boundfin_add_resolve_test(boundfin_resolve_namespace_roles test_resolve_namespace_roles.cpp)
+boundfin_add_resolve_test(boundfin_resolve_export test_resolve_export.cpp)
+boundfin_add_resolve_test(boundfin_resolve_full_module test_resolve_full_module.cpp)
