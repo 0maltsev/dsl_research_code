@@ -174,4 +174,8 @@ ShapeOutcome shape_of_literal(std::uint32_t capacity, std::vector<ShapePtr> elem
   return shape_ok(shape);
 }
 
+ShapeOutcome shape_of_conditional(const ShapePtr &then_shape, const ShapePtr &else_shape, SourceSpan span) {
+  return join_shapes(then_shape, else_shape, span);
+}
+
 } // namespace boundfin::source::size::shape

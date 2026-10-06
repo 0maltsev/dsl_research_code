@@ -170,17 +170,24 @@ struct ShapeOutcome {
 // both reduce to (folding is the caller's job, e.g. shape_of_literal
 // below).
 //
-// Per-kind behavior (main.pdf p.11-12's conditional-row prose, which is
-// the paper's only place stating the join's actual behavior in full --
-// Table 8 itself just names "J"/"squnion" without re-deriving it):
-// scalar join scalar = scalar (no data to compare). array join array:
-// exact component is the shared term when both inputs have the *same*
-// exact component (compared structurally via certificate::terms_equal,
-// matching "preserves an exact length only when both branches establish
-// the same expression"), else star; upper component is always
-// max(u1,u2); element component is the two inputs' own elements joined
-// recursively. product join product: component-wise join, matching
-// arity. A capacity mismatch between two array operands, an arity
+// Per-kind behavior: the scalar and array cases are stated directly in
+// main.pdf p.11-12's conditional-row prose (Table 8 itself just names
+// "J"/"squnion" without re-deriving it): scalar join scalar = scalar
+// (no data to compare). array join array: exact component is the
+// shared term when both inputs have the *same* exact component
+// (compared structurally via certificate::terms_equal, matching
+// "preserves an exact length only when both branches establish the
+// same expression"), else star; upper component is always max(u1,u2);
+// element component is the two inputs' own elements joined recursively.
+// product join product (component-wise, matching arity) is *not*
+// separately spelled out in prose anywhere in the paper -- it is the
+// forced structural reading of "J is recursive join" (p.39) applied to
+// Sec. 4.3's own prod(kappa_1,...,kappa_k) grammar, the only coherent
+// way to recursively join two product shapes given that grammar (a
+// spec-auditor review of the fourth slice confirmed no sentence in
+// pp.10-12 or App. A.5 spells this case out the way the array case is
+// spelled out, correcting an earlier overclaim in this comment that it
+// was). A capacity mismatch between two array operands, an arity
 // mismatch between two product operands, or a kind mismatch between the
 // two operands at all is INT001, not a SIZ code: every call site in
 // this module joins two shapes that provably share a static type (two
@@ -233,5 +240,32 @@ struct ShapeOutcome {
 // reachable code path until that wiring lands.
 [[nodiscard]] ShapeOutcome shape_of_literal(std::uint32_t capacity, std::vector<ShapePtr> element_shapes,
                                              SourceSpan span);
+
+// Table 8's "conditional" row: "branch shapes kappa_t,kappa_f" ->
+// "J(kappa_t,kappa_f); exact length retained iff equal" (main.pdf p.40).
+// `main.pdf` p.39's App. A.5 intro already states "J is recursive join"
+// as one operation named once and reused across rows; `join_shapes`
+// above already implements it, built in the third slice directly from
+// this same row's own prose (main.pdf p.11-12), which states the
+// scalar and array cases in full; the product case is the forced
+// structural reading of "recursive join" applied to Sec. 4.3's own
+// prod(kappa_1,...,kappa_k) grammar, not separately spelled out in
+// prose anywhere in the paper (confirmed by a spec-auditor review of
+// this slice, which also found and corrected an earlier version of
+// this comment that over-attributed this confirmation to AM-028 --
+// AM-028 itself is narrowly about join_shapes's error/mismatch
+// branches' diagnostic code, not its per-kind join algorithm). This
+// function is therefore a thin, deliberately non-reimplementing
+// wrapper: it exists
+// so the "conditional" row has its own discoverable, independently-
+// traceable entry point, matching every other row's one-function-per-
+// row style in this module, not because the join behaves any
+// differently for two conditional branches than for two array-literal
+// elements. Phase 3.2's T-If (`TYP005`) already requires both branches
+// to share a type, the identical "provably same static type"
+// precondition `join_shapes`'s own `INT001` trust boundary already
+// relies on.
+[[nodiscard]] ShapeOutcome shape_of_conditional(const ShapePtr &then_shape, const ShapePtr &else_shape,
+                                                 SourceSpan span);
 
 } // namespace boundfin::source::size::shape
