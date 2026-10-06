@@ -316,4 +316,66 @@ struct ShapeOutcome {
 // `array_shape`.
 [[nodiscard]] ShapeOutcome shape_of_index(const ShapePtr &array_shape, SourceSpan span);
 
+// Table 8's "capacity fallback" row: "type `arr(tau,N)`" -> "`array(star,
+// N,N;capshape(tau))`" (main.pdf p.40). `capshape(tau)` itself (main.pdf
+// p.11: "recursively replaces every array length in a type by its
+// capacity and supplies a finite fallback for nested aggregate
+// elements") is a *general* recursive function over the whole Type
+// grammar (`tau::=b | tau1 x ... x tauk | arr(tau,N)`), not specific to
+// array-typed inputs: applied to a scalar type it gives `scalar`;
+// applied to a product it recurses component-wise (reusing
+// shape_of_product); applied to an array `arr(tau,N)` it gives exactly
+// `array(star,N,N;capshape(tau))` -- which *is* this row's own result.
+// The "capacity fallback" row is therefore not a separate rule from
+// `capshape` itself, just `capshape` restated for its array-input case.
+//
+// No premise is stated anywhere for this function beyond `type` itself
+// being well-formed (unlike every other row in this module, which
+// checks a caller-supplied `Shape`'s own structure). Returns `INT001`
+// for a null `type` at any recursion depth (checked before every
+// dereference, at the top level and for `array_type.element`/each
+// `product_type.components[i]` before recursing into them): a spec-
+// auditor review of this slice's first version found this function had
+// no defensive null check at all, justified by an analogy to
+// `shape_of_product` that did not actually hold (`shape_of_product`
+// never dereferences its own `component_shapes` elements, so a null
+// entry there is merely stored, not immediately crashed on; `capshape`
+// does dereference `type->kind` immediately, at every recursion level,
+// making a null input a crash, not a latent bad value) -- and found
+// `capshape`'s *only actual caller today* is this module's own tests
+// (no `infer_shape` dispatcher exists yet to supply a real, Phase-3.2-
+// guaranteed-non-null `ast::TypePtr`), i.e. exactly the "constructed by
+// hand, can get wrong" risk category the original doc comment claimed
+// was unique to `Shape`, not `Type`. Null-checking here instead matches
+// this project's established house convention for exactly this role (a
+// function that is "the trust boundary" over a possibly-malformed
+// pointer-bearing tree it dereferences): `src/source/size/certificate`'s
+// own public builders are documented as deliberately unvalidated
+// specifically because the certificate *checker* is the trust boundary,
+// reproduced under ASan/UBSan (`test_certificate_null_safety.cpp`).
+//
+// NOT the same as the paper's separate ABI-array-parameter rule
+// (main.pdf p.11, main text, not a named Table 8 row): "ABI array
+// argument `x:arr(tau,N)` receives a fresh formal length `n_x`... Its
+// shape is `array(n_x,n_x,N;capshape(tau))`" -- an EXACT shape bound to
+// a fresh symbol, used specifically to seed `ShapeContext` for a real
+// ABI array parameter, versus this row's inexact (`star`) fallback.
+// This slice's first version claimed that rule was "likely ABI/lowering
+// -phase wiring, not this phase's own scope," without logging or asking
+// -- a spec-auditor review found this unsupported: the rule's own
+// paragraph is textually inside main.pdf Sec. 4.3, which CLAUDE.md's own
+// phase-reading table assigns to Phase 3 (not Phase 8's abi-layout.md);
+// Sec. 4.2's term grammar explicitly names "ABI lengths" (the `n_x`
+// symbol this rule mints) as a Phase-3 term-grammar concept; and `n_x`
+// seeds Sigma/K_f construction, Phase 3's own apparatus (AM-003 already
+// ties formal array-length symbols to Sigma). AM-030 (approved
+// 2026-10-06) corrects the rule's *categorization* to Phase 3's own
+// scope, but it is still not *implemented* in this already-complete
+// slice -- it needs its own future slice (an EXACT-shaped variant
+// minting a fresh symbol, tied to live ShapeContext-population wiring
+// this module does not have yet for any row), not a trivial addition to
+// `capshape` itself, which this function already provides in full for
+// the "capacity fallback" row's own scope.
+[[nodiscard]] ShapeOutcome capshape(const ast::TypePtr &type, SourceSpan span);
+
 } // namespace boundfin::source::size::shape

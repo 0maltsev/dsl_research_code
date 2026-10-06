@@ -198,4 +198,54 @@ ShapeOutcome shape_of_index(const ShapePtr &array_shape, SourceSpan span) {
   return shape_ok(std::get<ArrayShape>(array_shape->data).element);
 }
 
+ShapeOutcome capshape(const ast::TypePtr &type, SourceSpan span) {
+  if (!type) {
+    // See shape.hpp's doc comment: capshape's only actual caller today
+    // is this module's own tests, not a guaranteed-non-null Phase 3.2
+    // pipeline, so this is checked the same as every other function in
+    // this module.
+    return shape_fail("INT001", span, "internal: capshape type is null");
+  }
+  switch (type->kind) {
+  case ast::TypeKind::Bool:
+  case ast::TypeKind::I32:
+  case ast::TypeKind::I64:
+  case ast::TypeKind::F64:
+    return shape_ok(scalar_shape());
+  case ast::TypeKind::Array: {
+    const auto &array_type = std::get<ast::ArrayType>(type->data);
+    const auto element_outcome = capshape(array_type.element, span);
+    if (!element_outcome.ok) {
+      return element_outcome;
+    }
+    ArrayShape result;
+    result.exact = std::nullopt;
+    result.upper = certificate::make_literal(array_type.capacity);
+    result.capacity = array_type.capacity;
+    result.element = *element_outcome.result;
+    auto shape = std::make_shared<Shape>();
+    shape->kind = ShapeKind::Array;
+    shape->data = result;
+    return shape_ok(shape);
+  }
+  case ast::TypeKind::Product: {
+    const auto &product_type = std::get<ast::ProductType>(type->data);
+    std::vector<ShapePtr> component_shapes;
+    component_shapes.reserve(product_type.components.size());
+    for (const auto &component : product_type.components) {
+      const auto component_outcome = capshape(component, span);
+      if (!component_outcome.ok) {
+        return component_outcome;
+      }
+      component_shapes.push_back(*component_outcome.result);
+    }
+    return shape_ok(shape_of_product(std::move(component_shapes)));
+  }
+  }
+  // Unreachable (exhaustive switch over every ast::TypeKind); INT001,
+  // not a SIZ/user-facing code, matching this module's other defensive
+  // branches (e.g. join_shapes's identical fallback).
+  return shape_fail("INT001", span, "internal: unreachable type kind");
+}
+
 } // namespace boundfin::source::size::shape
