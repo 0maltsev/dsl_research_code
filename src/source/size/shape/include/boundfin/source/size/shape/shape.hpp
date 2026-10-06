@@ -268,4 +268,52 @@ struct ShapeOutcome {
 [[nodiscard]] ShapeOutcome shape_of_conditional(const ShapePtr &then_shape, const ShapePtr &else_shape,
                                                  SourceSpan span);
 
+// Table 8's "length/index" row, first half: "array `array(lambda,u,N;
+// kappa-bar)`" -> "scalar/count `(lambda,u)`" (main.pdf p.40). Table 8's
+// own caption disambiguates this cell directly: "'Scalar/count' means
+// scalar shape plus the separate refinement in table 6" -- so `len(e)`'s
+// Table 8 shape (kappa) is unconditionally `scalar` (also confirmed by
+// Table 7's T-Len: "length: i32" unconditionally, and by kappa's own
+// grammar, p.11, having no variant that could carry `(lambda,u)`
+// alongside `scalar`); "`(lambda,u)`" is a pointer to Table 6's separate
+// `|-cnt` judgment, not part of kappa at all, and this function
+// implements only the `scalar`/kappa half.
+//
+// `(lambda,u)` itself is not obtained from this function's own return
+// value (`ShapeOutcome` only ever carries a scalar `ShapePtr` on
+// success) -- it is already directly available on the `array_shape`
+// *parameter itself* (`ArrayShape::exact`/`::upper`, public since the
+// third slice), which a future caller retains from the operand's own
+// already-computed shape before calling this function, not something
+// this function hands back. This is what will let Table 6's still-
+// deferred `C-Len-E`/`C-Len-U` pull `(lambda,u)` from an already-
+// computed Table 8 shape in a later, separately-scoped slice (threading
+// a `Shape` into `src/source/size/count`'s `infer_count` is a
+// cross-module design question not undertaken here) -- a fact about
+// `ArrayShape`'s own pre-existing public fields, not new behavior this
+// function provides.
+//
+// Trust boundary: `array_shape` is taken as given, not derived here
+// (same pattern as every other row in this module). Phase 3.2's
+// typecheck already rejects a non-array `len` operand via `TYP009`
+// before shape derivation ever runs, so a caller presenting a
+// non-`Array` `array_shape` here violates an already-checked invariant
+// -- `INT001`, not a SIZ code.
+[[nodiscard]] ShapeOutcome shape_of_len(const ShapePtr &array_shape, SourceSpan span);
+
+// Table 8's "length/index" row, second half: "array `array(lambda,u,N;
+// kappa-bar)`" -> "`kappa-bar`" -- indexing an array returns its
+// element summary, the *same* conservative join every logical element
+// already shares (main.pdf p.11-12: "indexing returns the array's
+// element summary"). The index value itself is irrelevant to the
+// result (consistent with why `kappa-bar` is one joined shape, not a
+// per-index vector, in the first place) -- this function accordingly
+// does not take the index expression/value at all.
+//
+// Trust boundary: identical to shape_of_len's -- Phase 3.2's typecheck
+// already rejects a non-array index operand via `TYP009` before shape
+// derivation ever runs, so `INT001`, not a SIZ code, for a non-`Array`
+// `array_shape`.
+[[nodiscard]] ShapeOutcome shape_of_index(const ShapePtr &array_shape, SourceSpan span);
+
 } // namespace boundfin::source::size::shape

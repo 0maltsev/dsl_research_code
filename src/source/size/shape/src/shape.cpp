@@ -178,4 +178,24 @@ ShapeOutcome shape_of_conditional(const ShapePtr &then_shape, const ShapePtr &el
   return join_shapes(then_shape, else_shape, span);
 }
 
+ShapeOutcome shape_of_len(const ShapePtr &array_shape, SourceSpan span) {
+  if (!array_shape || array_shape->kind != ShapeKind::Array) {
+    // See shape.hpp's doc comment on shape_of_len: Phase 3.2's TYP009
+    // already rejects a non-array len operand before shape derivation
+    // runs.
+    return shape_fail("INT001", span, "internal: len operand is not an array shape");
+  }
+  return shape_ok(scalar_shape());
+}
+
+ShapeOutcome shape_of_index(const ShapePtr &array_shape, SourceSpan span) {
+  if (!array_shape || array_shape->kind != ShapeKind::Array) {
+    // See shape.hpp's doc comment on shape_of_index: Phase 3.2's TYP009
+    // already rejects a non-array index operand before shape derivation
+    // runs.
+    return shape_fail("INT001", span, "internal: index operand is not an array shape");
+  }
+  return shape_ok(std::get<ArrayShape>(array_shape->data).element);
+}
+
 } // namespace boundfin::source::size::shape
