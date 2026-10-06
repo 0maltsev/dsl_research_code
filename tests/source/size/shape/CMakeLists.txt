@@ -6,3 +6,4 @@ function(boundfin_add_shape_test name)
 endfunction()
 
 boundfin_add_shape_test(boundfin_shape_scalar_var test_shape_scalar_var.cpp)
+boundfin_add_shape_test(boundfin_shape_product_proj test_shape_product_proj.cpp)

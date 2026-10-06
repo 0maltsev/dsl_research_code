@@ -117,4 +117,48 @@ struct ShapeOutcome {
 // before this function ever sees a reference to it.
 [[nodiscard]] ShapeOutcome shape_of_var(const ast::VarExpr &var_expr, SourceSpan span, const ShapeContext &context);
 
+// Table 8's "product/proj" row, first half: "component shapes kappa_i" ->
+// "prod(kappa-bar)" -- collects already-computed component shapes into a
+// Product shape, in declared order. Takes the component shapes directly
+// (not an ast::ProductExpr) because the row's own premise is phrased over
+// already-known shapes, not subexpressions; recursively computing each
+// component's own shape from source needs the general infer_shape
+// dispatcher this module does not expose yet (see shape.hpp's top
+// comment). Infallible: Table 8's own row text (main.pdf p.40) states a
+// premise only for the projection half ("valid field j"), none for
+// construction; Phase 3.2's typecheck already rejects a malformed
+// product (wrong arity, etc., AM-002) before any shape derivation runs;
+// and prod() imposes no further cross-component constraint to violate.
+// This mirrors src/source/typecheck's own make_product_type, the exact
+// existing precedent for "trust the caller, no arity re-check" (it too
+// relies entirely on the parser's SYN003 arity-at-least-two guarantee,
+// never re-verified downstream).
+[[nodiscard]] ShapePtr shape_of_product(std::vector<ShapePtr> component_shapes);
+
+// Table 8's "product/proj" row, second half: "valid field j" ->
+// "kappa_j" -- selects the j-th component shape (1-based, matching
+// ast::ProjExpr::index and AM-002's "proj<j>(e) uses one-based j") from
+// an already-Product-shaped operand.
+//
+// Trust boundary: `operand_shape` is taken as given, not derived here
+// (same pattern as shape_of_var's `context`). Phase 3.2's typecheck
+// already enforces "valid field j" (TYP006 non-product operand, TYP007
+// out-of-arity index) before shape derivation ever runs, so a caller
+// presenting a non-Product `operand_shape` or an out-of-range `index`
+// here violates an already-checked invariant -- INT001, not a SIZ code,
+// matching shape_of_var's identical reasoning. (SIZ007, "Exact/upper/
+// capacity shape is malformed or constraint-inconsistent," is reserved
+// for a later Table 8 row where the *shape itself* can be inconsistent
+// in a way Table 7 never checks, e.g. a builder/array's lambda<=u<=N --
+// neither of this function's own conditions is such a case, since both
+// are fully precluded by TYP006/TYP007 already.) `index`'s low bound
+// (index<1, i.e. index==0 since index is unsigned) is in fact
+// unreachable one gate earlier than TYP007: grammar.ebnf's
+// positive-decimal production forbids a literal 0 at the parser
+// (SYN001), so a real parsed-and-typechecked program can never reach
+// this function with index==0 at all -- the check (and its test) stay
+// defensive, not merely redundant with TYP007, since they exercise this
+// function's own direct API rather than a full parse pipeline.
+[[nodiscard]] ShapeOutcome shape_of_proj(const ShapePtr &operand_shape, std::uint32_t index, SourceSpan span);
+
 } // namespace boundfin::source::size::shape
