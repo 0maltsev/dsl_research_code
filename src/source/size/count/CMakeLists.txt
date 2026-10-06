@@ -10,6 +10,7 @@ target_link_libraries(boundfin_source_size_count
   PUBLIC
     boundfin_source_ast
     boundfin_source_size_certificate
+    boundfin_source_size_shape
   PRIVATE
     boundfin_warnings
     boundfin_numerics

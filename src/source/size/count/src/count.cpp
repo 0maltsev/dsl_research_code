@@ -33,18 +33,20 @@ CountOutcome infer_const(const LiteralExpr &literal, SourceSpan span) {
   return ok_with(CountResult{term, term});
 }
 
-CountOutcome infer_count_impl(const Expr &expr, const IndexContext &index_context);
+CountOutcome infer_count_impl(const Expr &expr, const IndexContext &index_context,
+                               const shape::ShapeContext &shape_context);
 
 // C-If-E: "guard Boolean; both branches (s,u_t;nu_t) and (s,u_f;nu_f)" ->
 // (s,max(u_t,u_f);nu) with nu=s.
 // C-If-U: "branch exact terms differ or either is star" ->
 // (star,max(u_t,u_f);nu) with 0<=nu<=max(u_t,u_f).
-CountOutcome infer_if(const IfExpr &if_expr, const IndexContext &index_context) {
-  const auto then_outcome = infer_count_impl(*if_expr.then_branch, index_context);
+CountOutcome infer_if(const IfExpr &if_expr, const IndexContext &index_context,
+                       const shape::ShapeContext &shape_context) {
+  const auto then_outcome = infer_count_impl(*if_expr.then_branch, index_context, shape_context);
   if (!then_outcome.ok) {
     return then_outcome;
   }
-  const auto else_outcome = infer_count_impl(*if_expr.else_branch, index_context);
+  const auto else_outcome = infer_count_impl(*if_expr.else_branch, index_context, shape_context);
   if (!else_outcome.ok) {
     return else_outcome;
   }
@@ -68,12 +70,13 @@ constexpr std::uint64_t kI32Max = 2147483647; // 2^31-1
 // Literal/Max), so the obligation is certified via direct closed
 // evaluation (ClosedEval); a future symbolic u (C-ABI/C-Idx) will need a
 // non-ClosedEval certificate, not yet needed here.
-CountOutcome infer_add(const BinaryPrimitiveExpr &binary, SourceSpan span, const IndexContext &index_context) {
-  const auto lhs_outcome = infer_count_impl(*binary.lhs, index_context);
+CountOutcome infer_add(const BinaryPrimitiveExpr &binary, SourceSpan span, const IndexContext &index_context,
+                        const shape::ShapeContext &shape_context) {
+  const auto lhs_outcome = infer_count_impl(*binary.lhs, index_context, shape_context);
   if (!lhs_outcome.ok) {
     return lhs_outcome;
   }
-  const auto rhs_outcome = infer_count_impl(*binary.rhs, index_context);
+  const auto rhs_outcome = infer_count_impl(*binary.rhs, index_context, shape_context);
   if (!rhs_outcome.ok) {
     return rhs_outcome;
   }
@@ -111,12 +114,13 @@ CountOutcome infer_add(const BinaryPrimitiveExpr &binary, SourceSpan span, const
 // difference directly after confirming lambda2<=lambda1, else fall back
 // to star even though lambda1 is present (lambda2 may still be absent
 // or non-closed).
-CountOutcome infer_sub(const BinaryPrimitiveExpr &binary, SourceSpan span, const IndexContext &index_context) {
-  const auto lhs_outcome = infer_count_impl(*binary.lhs, index_context);
+CountOutcome infer_sub(const BinaryPrimitiveExpr &binary, SourceSpan span, const IndexContext &index_context,
+                        const shape::ShapeContext &shape_context) {
+  const auto lhs_outcome = infer_count_impl(*binary.lhs, index_context, shape_context);
   if (!lhs_outcome.ok) {
     return lhs_outcome;
   }
-  const auto rhs_outcome = infer_count_impl(*binary.rhs, index_context);
+  const auto rhs_outcome = infer_count_impl(*binary.rhs, index_context, shape_context);
   if (!rhs_outcome.ok) {
     return rhs_outcome;
   }
@@ -166,24 +170,72 @@ CountOutcome infer_var(const VarExpr &var_expr, SourceSpan span, const IndexCont
   return ok_with(CountResult{it->second.symbol, it->second.upper});
 }
 
-CountOutcome infer_count_impl(const Expr &expr, const IndexContext &index_context) {
+// C-Len-E: "e has array(s,u,N;kappa-bar)" -> "(s,u;nu)" with nu=s.
+// C-Len-U: "e has array(star,u,N;kappa-bar)" -> "(star,u;nu)" with
+// 0<=nu<=u. AM-034 (approved 2026-10-07): scoped to a `VarExpr` operand
+// with a recorded `shape_context` entry only, mirroring C-Idx's own
+// narrow, already-approved "via a caller-supplied context, not full live
+// ast::Expr traversal" precedent (AM-026) -- any other operand (not a
+// `VarExpr`, or a `VarExpr` absent from `shape_context`) falls through
+// to `SIZ003`, deferred to a later live-wiring slice (a fully general
+// operand needs the still-undeferred `infer_shape` dispatcher to compute
+// its own shape first). `len_expr.array` is dereferenced without a null
+// check, matching this file's own established trust in every AST node's
+// child `ExprPtr` fields (an AST-level invariant from the parser, not
+// re-verified anywhere else in this module either).
+CountOutcome infer_len(const LenExpr &len_expr, SourceSpan span, const shape::ShapeContext &shape_context) {
+  if (len_expr.array->kind != ExprKind::Var) {
+    return fail("SIZ003", span, "len operand has no accepted count-refinement rule: not a variable reference");
+  }
+  const auto &var_expr = std::get<VarExpr>(len_expr.array->data);
+  if (!var_expr.resolved_binding) {
+    // Unreachable for any module that went through Phase 3.1's resolver;
+    // matches infer_var's identical defensive branch.
+    return fail("INT001", span, "internal: len operand variable reference has no resolved binding");
+  }
+  const auto it = shape_context.find(*var_expr.resolved_binding);
+  if (it == shape_context.end()) {
+    return fail("SIZ003", span, "len operand has no recorded shape: no accepted count-refinement rule");
+  }
+  const auto &operand_shape = it->second;
+  if (!operand_shape || operand_shape->kind != shape::ShapeKind::Array) {
+    // Phase 3.2's TYP009 already rejects a non-array len operand before
+    // shape/count derivation ever runs -- a caller-supplied shape_context
+    // entry of the wrong kind here is a caller precondition violation,
+    // mirroring shape_of_len's own identical trust-boundary reasoning.
+    return fail("INT001", span, "internal: len operand's recorded shape is not an array shape");
+  }
+  const auto &array_shape = std::get<shape::ArrayShape>(operand_shape->data);
+  if (!array_shape.upper || (array_shape.exact && !*array_shape.exact)) {
+    // Mirrors shape_of_builder's own AM-032 null-trust-boundary check: a
+    // present-but-null exact term, or a null upper term, is a caller
+    // precondition violation, not a legitimately-inexact "absent" case.
+    return fail("INT001", span, "internal: len operand's recorded array shape has a null exact/upper term");
+  }
+  return ok_with(CountResult{array_shape.exact, array_shape.upper}); // C-Len-E when exact present, else C-Len-U
+}
+
+CountOutcome infer_count_impl(const Expr &expr, const IndexContext &index_context,
+                               const shape::ShapeContext &shape_context) {
   switch (expr.kind) {
   case ExprKind::Literal:
     return infer_const(std::get<LiteralExpr>(expr.data), expr.span);
   case ExprKind::If:
-    return infer_if(std::get<IfExpr>(expr.data), index_context);
+    return infer_if(std::get<IfExpr>(expr.data), index_context, shape_context);
   case ExprKind::BinaryPrimitive: {
     const auto &binary = std::get<BinaryPrimitiveExpr>(expr.data);
     if (binary.op == BinaryPrimitiveOp::Add) {
-      return infer_add(binary, expr.span, index_context);
+      return infer_add(binary, expr.span, index_context, shape_context);
     }
     if (binary.op == BinaryPrimitiveOp::Sub) {
-      return infer_sub(binary, expr.span, index_context);
+      return infer_sub(binary, expr.span, index_context, shape_context);
     }
     return fail("SIZ003", expr.span, "expression has no accepted count-refinement rule");
   }
   case ExprKind::Var:
     return infer_var(std::get<VarExpr>(expr.data), expr.span, index_context);
+  case ExprKind::Len:
+    return infer_len(std::get<LenExpr>(expr.data), expr.span, shape_context);
   case ExprKind::Let:
   case ExprKind::Fold:
   case ExprKind::Build:
@@ -191,7 +243,6 @@ CountOutcome infer_count_impl(const Expr &expr, const IndexContext &index_contex
   case ExprKind::Call:
   case ExprKind::ArrayLiteral:
   case ExprKind::Product:
-  case ExprKind::Len:
   case ExprKind::Proj:
   case ExprKind::Index:
     return fail("SIZ003", expr.span, "expression has no accepted count-refinement rule");
@@ -367,8 +418,9 @@ ModuleAdmissibilityOutcome walk_for_admissibility(const Expr &expr, const IndexC
 
 } // namespace
 
-CountOutcome infer_count(const ast::Expr &expr, const IndexContext &index_context) {
-  return infer_count_impl(expr, index_context);
+CountOutcome infer_count(const ast::Expr &expr, const IndexContext &index_context,
+                          const shape::ShapeContext &shape_context) {
+  return infer_count_impl(expr, index_context, shape_context);
 }
 
 // T-Fold/T-Build's shared count-admissibility premise (main.pdf Sec. 4.2,

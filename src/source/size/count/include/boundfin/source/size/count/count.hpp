@@ -2,6 +2,7 @@
 
 #include "boundfin/source/ast/ast.hpp"
 #include "boundfin/source/size/certificate/certificate.hpp"
+#include "boundfin/source/size/shape/shape.hpp"
 
 #include <optional>
 #include <string>
@@ -98,12 +99,30 @@ struct CountOutcome {
 // traversal (deferred to a later slice, AM-026) -- a caller exercising
 // C-Idx builds and supplies it directly.
 //
-// Phase 3.4 implements 6 of Table 6's 10 rules so far -- C-Const,
-// C-If-E, C-If-U, C-Add, C-Sub, C-Idx (AM-023, AM-024, AM-025, AM-026)
-// -- see STATUS.md's Phase 3.4 entry for why the other 4 (C-ABI,
-// C-Len-E, C-Len-U, C-Call) are deferred rather than guessed. Every
-// expression kind/operator not covered by an implemented rule raises
-// `SIZ003` ("Expression has no accepted count-refinement rule"),
+// `shape_context` supplies C-Len-E/C-Len-U's own per-binding data
+// (AM-034, 2026-10-07): a `src/source/size/shape::ShapeContext`
+// (`BindingId -> ShapePtr`), the first dependency this module takes on
+// `src/source/size/shape` (previously sibling modules with no
+// dependency either direction; `docs/architecture.md`'s module table
+// does not distinguish between them, both being part of one planned
+// `src/source/size` row). Omit it (or pass `{}`) when no `len(e)`
+// subexpression needs a count refinement; `infer_len` (count.cpp) is
+// scoped to a `VarExpr` operand with a recorded `shape_context` entry
+// only, mirroring C-Idx's own narrow "via a caller-supplied context,
+// not full live `ast::Expr` traversal" precedent (AM-026) -- any other
+// `len(e)` operand (not a `VarExpr`, or a `VarExpr` absent from
+// `shape_context`) falls through to `SIZ003`, deferred to a later
+// live-wiring slice (a fully general operand needs the still-undeferred
+// `infer_shape` dispatcher to compute its own shape first).
+//
+// Phase 3.4 implements 8 of Table 6's 10 rules so far -- C-Const,
+// C-If-E, C-If-U, C-Add, C-Sub, C-Idx, C-Len-E, C-Len-U (AM-023, AM-024,
+// AM-025, AM-026, AM-034) -- see STATUS.md's Phase 3.4 entry for why the
+// other 2 (C-ABI, C-Call) are deferred rather than guessed (AM-034: both
+// are tied up with the still-undesigned Sigma/K_f/Q_f-construction
+// machinery, a materially larger, separately-scoped future milestone).
+// Every expression kind/operator not covered by an implemented rule
+// raises `SIZ003` ("Expression has no accepted count-refinement rule"),
 // matching the paper's own closing statement for Table 6 (p.37): "No
 // other expression derives a count refinement." `C-Add`/`C-Sub`
 // specifically can instead raise `SIZ006` ("Count add/sub lacks the
@@ -113,7 +132,8 @@ struct CountOutcome {
 // found and this session independently reproduced a real soundness bug
 // (certifying only "u2<=u1" let a deterministically-underflowing nested
 // subtraction, (10-9)-2, through as ok=true).
-[[nodiscard]] CountOutcome infer_count(const ast::Expr &expr, const IndexContext &index_context = {});
+[[nodiscard]] CountOutcome infer_count(const ast::Expr &expr, const IndexContext &index_context = {},
+                                        const shape::ShapeContext &shape_context = {});
 
 struct AdmissibilityOutcome {
   bool ok = false;
