@@ -161,4 +161,77 @@ struct ShapeOutcome {
 // function's own direct API rather than a full parse pipeline.
 [[nodiscard]] ShapeOutcome shape_of_proj(const ShapePtr &operand_shape, std::uint32_t index, SourceSpan span);
 
+// The recursive join operation App. A.5's intro names "J" (main.pdf
+// p.11: "J is recursive join"), stated once by the paper and reused by
+// multiple Table 8 rows under two different notations: "literal" and
+// "builder" write it folded over several operands as kappa-bar=
+// (squnion)_{i<n} kappa_i; "conditional" writes it applied to exactly
+// two operands as J(kappa_t,kappa_f). This function is the binary case
+// both reduce to (folding is the caller's job, e.g. shape_of_literal
+// below).
+//
+// Per-kind behavior (main.pdf p.11-12's conditional-row prose, which is
+// the paper's only place stating the join's actual behavior in full --
+// Table 8 itself just names "J"/"squnion" without re-deriving it):
+// scalar join scalar = scalar (no data to compare). array join array:
+// exact component is the shared term when both inputs have the *same*
+// exact component (compared structurally via certificate::terms_equal,
+// matching "preserves an exact length only when both branches establish
+// the same expression"), else star; upper component is always
+// max(u1,u2); element component is the two inputs' own elements joined
+// recursively. product join product: component-wise join, matching
+// arity. A capacity mismatch between two array operands, an arity
+// mismatch between two product operands, or a kind mismatch between the
+// two operands at all is INT001, not a SIZ code: every call site in
+// this module joins two shapes that provably share a static type (two
+// elements of the same array literal; two branches of one conditional;
+// two iterations of one fold/builder body), so Phase 3.2's own
+// type-equality checks already preclude a real structural mismatch here
+// -- mirrors shape_of_var's/shape_of_proj's identical trust-boundary
+// reasoning. (AM-028, approved 2026-10-06: SIZ008, "Recursive
+// element-shape join or fold recurrence cannot be formed," is reserved
+// for the deferred builder/fold rows' own distinct problem -- folding
+// squnion over a *symbolic*, not-necessarily-concrete iteration count
+// (0<=i<u_n) cannot be mechanically formed by direct enumeration the
+// way shape_of_literal's fold over a literal's always-concrete m can,
+// needing some other proof technique instead. join_shapes's own
+// algorithm is total for any two structurally compatible shapes; its
+// mismatch branches guard a caller precondition violation, not a
+// limitation of the join itself, so SIZ008 does not apply here.)
+[[nodiscard]] ShapeOutcome join_shapes(const ShapePtr &first, const ShapePtr &second, SourceSpan span);
+
+// Table 8's "literal" row: "m<=N, element shapes kappa_i" ->
+// "array(m,m,N;squnion_{i<m} kappa_i)" (main.pdf p.40). `element_shapes`
+// is the array literal's own per-element shapes, already computed (same
+// "takes shapes directly, not ast::Expr" pattern as shape_of_product --
+// recursing into each element's own subexpression needs the still-
+// deferred infer_shape dispatcher). Folds join_shapes left-to-right over
+// `element_shapes` (AM-020 already confirmed an empty array literal
+// (m=0) is rejected by typecheck's TYP008 before shape derivation ever
+// runs, so `element_shapes` is expected non-empty; an empty vector here
+// is INT001, a caller precondition violation, not SIZ002/SIZ003 -- the
+// program that would reach this with m=0 was already rejected one phase
+// earlier). Both lambda and u in the result are the same literal term
+// `m` (the element count is exactly, statically known for any literal,
+// not merely bounded): per the result column, "array(m,m,N;...)" writes
+// the identical symbol `m` in both the exact and upper positions.
+//
+// This is where AM-018's already-approved "m<=N is deferred to
+// src/source/size" decision is finally carried out: `capacity <
+// element_shapes.size()` raises SIZ002 ("Array literal length exceeds
+// capacity") here -- a real, SIZ-coded rejection of the program (unlike
+// every INT001 case in this module so far), since neither the parser
+// (AM-018) nor typecheck (AM-029: Table 7's own T-Array rule states
+// "m<=N" too, but typecheck deliberately omits it, the same split
+// already applied to T-Fold/T-Build's own bundled size premise) checks
+// this anywhere else. Not yet reachable by actually compiling a real
+// program, though: like every Table 8 row in this module so far, this
+// function is callable directly on caller-supplied shapes but not yet
+// wired into any module-wide traversal (no infer_shape dispatcher
+// exists yet -- see this header's top comment) -- an over-length array
+// literal in a real program will not be rejected by any currently
+// reachable code path until that wiring lands.
+[[nodiscard]] ShapeOutcome shape_of_literal(std::uint32_t capacity, std::vector<ShapePtr> element_shapes,
+                                             SourceSpan span);
+
 } // namespace boundfin::source::size::shape

@@ -2,6 +2,16 @@
 
 namespace boundfin::source::size::shape {
 
+namespace {
+
+ShapeOutcome shape_fail(std::string code, SourceSpan span, std::string message) {
+  return ShapeOutcome{false, std::nullopt, ShapeDiagnostic{std::move(code), span, std::move(message)}};
+}
+
+ShapeOutcome shape_ok(ShapePtr shape) { return ShapeOutcome{true, std::move(shape), std::nullopt}; }
+
+} // namespace
+
 ShapePtr scalar_shape() {
   static const ShapePtr instance = [] {
     auto shape = std::make_shared<Shape>();
@@ -55,6 +65,113 @@ ShapeOutcome shape_of_proj(const ShapePtr &operand_shape, std::uint32_t index, S
                          ShapeDiagnostic{"INT001", span, "internal: projection index out of recorded component range"}};
   }
   return ShapeOutcome{true, components[index - 1], std::nullopt};
+}
+
+ShapeOutcome join_shapes(const ShapePtr &first, const ShapePtr &second, SourceSpan span) {
+  if (!first || !second) {
+    return shape_fail("INT001", span, "internal: join operand is null");
+  }
+  if (first->kind != second->kind) {
+    // See shape.hpp's doc comment on join_shapes: every call site joins
+    // two shapes that provably share a static type, so a kind mismatch
+    // here is a caller precondition violation, not a program property.
+    return shape_fail("INT001", span, "internal: join operands have different shape kinds");
+  }
+  switch (first->kind) {
+  case ShapeKind::Scalar:
+    return shape_ok(scalar_shape());
+  case ShapeKind::Array: {
+    const auto &first_array = std::get<ArrayShape>(first->data);
+    const auto &second_array = std::get<ArrayShape>(second->data);
+    if (first_array.capacity != second_array.capacity) {
+      return shape_fail("INT001", span, "internal: join operands have different array capacities");
+    }
+    const auto element_join = join_shapes(first_array.element, second_array.element, span);
+    if (!element_join.ok) {
+      return element_join;
+    }
+    ArrayShape joined;
+    joined.capacity = first_array.capacity;
+    joined.upper = certificate::make_max(first_array.upper, second_array.upper);
+    if (first_array.exact && second_array.exact &&
+        certificate::terms_equal(**first_array.exact, **second_array.exact)) {
+      joined.exact = *first_array.exact;
+    } else {
+      joined.exact = std::nullopt;
+    }
+    joined.element = *element_join.result;
+    auto shape = std::make_shared<Shape>();
+    shape->kind = ShapeKind::Array;
+    shape->data = joined;
+    return shape_ok(shape);
+  }
+  case ShapeKind::Product: {
+    const auto &first_components = std::get<ProductShape>(first->data).components;
+    const auto &second_components = std::get<ProductShape>(second->data).components;
+    if (first_components.size() != second_components.size()) {
+      return shape_fail("INT001", span, "internal: join operands have different product arities");
+    }
+    std::vector<ShapePtr> joined_components;
+    joined_components.reserve(first_components.size());
+    for (std::size_t i = 0; i < first_components.size(); ++i) {
+      const auto component_join = join_shapes(first_components[i], second_components[i], span);
+      if (!component_join.ok) {
+        return component_join;
+      }
+      joined_components.push_back(*component_join.result);
+    }
+    return shape_ok(shape_of_product(std::move(joined_components)));
+  }
+  }
+  // Unreachable (exhaustive switch over every ShapeKind); INT001, not a
+  // SIZ/user-facing code, matching this module's other defensive
+  // branches.
+  return shape_fail("INT001", span, "internal: unreachable shape kind");
+}
+
+ShapeOutcome shape_of_literal(std::uint32_t capacity, std::vector<ShapePtr> element_shapes, SourceSpan span) {
+  if (element_shapes.empty()) {
+    // AM-020: typecheck's TYP008 already rejects an empty array literal
+    // (m=0) before shape derivation ever runs.
+    return shape_fail("INT001", span, "internal: array literal has no element shapes");
+  }
+  for (const auto &element_shape : element_shapes) {
+    if (!element_shape) {
+      // A null element shape (e.g. a single-element literal, m=1, whose
+      // only element is null) would otherwise bypass every null check
+      // in this file: with m=1 the fold loop below never runs, so
+      // join_shapes's own "!first || !second" guard never sees it, and
+      // an internally-inconsistent Shape (ShapeKind::Array with a null
+      // `element`) would silently escape with ok=true. Checked up front
+      // for every element, not just the first, for the same reason
+      // join_shapes checks both of its own operands.
+      return shape_fail("INT001", span, "internal: array literal element shape is null");
+    }
+  }
+  const auto m = element_shapes.size();
+  // AM-018: "m<=N" is deferred to src/source/size specifically; this is
+  // the first point in the pipeline that checks it.
+  if (m > capacity) {
+    return shape_fail("SIZ002", span, "array literal length exceeds capacity");
+  }
+  ShapePtr joined_element = element_shapes[0];
+  for (std::size_t i = 1; i < element_shapes.size(); ++i) {
+    const auto outcome = join_shapes(joined_element, element_shapes[i], span);
+    if (!outcome.ok) {
+      return outcome;
+    }
+    joined_element = *outcome.result;
+  }
+  const auto count_term = certificate::make_literal(static_cast<std::uint64_t>(m));
+  ArrayShape result;
+  result.exact = count_term;
+  result.upper = count_term;
+  result.capacity = capacity;
+  result.element = joined_element;
+  auto shape = std::make_shared<Shape>();
+  shape->kind = ShapeKind::Array;
+  shape->data = result;
+  return shape_ok(shape);
 }
 
 } // namespace boundfin::source::size::shape
