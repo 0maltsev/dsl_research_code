@@ -202,6 +202,169 @@ CountOutcome infer_count_impl(const Expr &expr, const IndexContext &index_contex
   return fail("INT001", expr.span, "internal: unreachable expression kind");
 }
 
+ModuleAdmissibilityOutcome module_ok() { return ModuleAdmissibilityOutcome{true, std::nullopt}; }
+
+ModuleAdmissibilityOutcome module_fail(CountDiagnostic diagnostic) {
+  return ModuleAdmissibilityOutcome{false, std::move(diagnostic)};
+}
+
+// Walks every subexpression of `expr` looking for FoldExpr/BuildExpr
+// nodes to admissibility-check, at any nesting depth and in any child
+// position -- distinct from infer_count_impl's switch above, which only
+// recurses through the Table-6-relevant subset (If/Add/Sub) and treats
+// Fold/Build as a dead end (SIZ003). `context` carries every enclosing
+// fold/build's index binding reached so far on this path.
+//
+// A FoldExpr/BuildExpr's own `count` subexpression IS separately walked
+// (see the Fold/Build cases below), not left to infer_count_impl's own
+// traversal: a spec-auditor review of this slice's first version found
+// and independently reproduced a counterexample showing that reasoning
+// was unsound -- infer_if (above) never inspects if_expr.condition at
+// all (it only recurses into then_branch/else_branch), so a Fold/Build
+// hidden inside the *condition* of an `if` that is itself part of an
+// enclosing fold/build's `count` expression was reachable by nothing:
+// not infer_count_impl's narrower recursion (which never looks at an
+// If's condition, let alone one nested inside a count expression), and
+// not this walker either, under its original "count is already proven
+// fold/build-free by construction" argument. Concretely,
+// `fold<16>(if fold<5>(i32bits(10); acc,idx; true; acc) then 5 else 3;
+// outer_acc,outer_idx; 0; outer_acc)` -- where the inner fold<5>'s count
+// 10 exceeds its capacity 5 -- was reported `ok=true` by the pre-fix
+// implementation (regression test:
+// SIZ005_propagates_from_a_fold_hidden_inside_an_enclosing_folds_count_condition,
+// test_count_module_admissibility.cpp). Walking `count` through this
+// same general walker (not through infer_count_impl's narrower one)
+// closes that gap, since this walker's own switch is exhaustive over
+// every ExprKind's every child position, including If's condition.
+ModuleAdmissibilityOutcome walk_for_admissibility(const Expr &expr, const IndexContext &context) {
+  switch (expr.kind) {
+  case ExprKind::Fold: {
+    const auto &fold_expr = std::get<FoldExpr>(expr.data);
+    if (!fold_expr.index_binding) {
+      // Unreachable for a module that went through Phase 3.1's resolver
+      // (which always sets index_binding on every FoldExpr); INT001, not
+      // a SIZ code, matching infer_var's own defensive branch.
+      return module_fail(CountDiagnostic{"INT001", expr.span, "internal: fold has no resolved index binding"});
+    }
+    const auto count_outcome = walk_for_admissibility(*fold_expr.count, context);
+    if (!count_outcome.ok) {
+      return count_outcome;
+    }
+    const auto admissibility =
+        check_count_admissibility(*fold_expr.count, fold_expr.capacity, *fold_expr.index_binding, context);
+    if (!admissibility.ok) {
+      return module_fail(*admissibility.diagnostic);
+    }
+    // `initial` is resolved before the accumulator/index binder entries
+    // are pushed into scope (src/source/resolve/src/resolver.cpp), so a
+    // reference to either from `initial` is already rejected as an
+    // unbound variable (NAM003) before this module ever runs; `initial`
+    // accordingly sees `context`, not `extended`.
+    const auto initial_outcome = walk_for_admissibility(*fold_expr.initial, context);
+    if (!initial_outcome.ok) {
+      return initial_outcome;
+    }
+    auto extended = context;
+    extended[*fold_expr.index_binding] = *admissibility.binding;
+    return walk_for_admissibility(*fold_expr.body, extended);
+  }
+  case ExprKind::Build: {
+    const auto &build_expr = std::get<BuildExpr>(expr.data);
+    if (!build_expr.index_binding) {
+      return module_fail(CountDiagnostic{"INT001", expr.span, "internal: build has no resolved index binding"});
+    }
+    const auto count_outcome = walk_for_admissibility(*build_expr.count, context);
+    if (!count_outcome.ok) {
+      return count_outcome;
+    }
+    const auto admissibility =
+        check_count_admissibility(*build_expr.count, build_expr.capacity, *build_expr.index_binding, context);
+    if (!admissibility.ok) {
+      return module_fail(*admissibility.diagnostic);
+    }
+    auto extended = context;
+    extended[*build_expr.index_binding] = *admissibility.binding;
+    return walk_for_admissibility(*build_expr.body, extended);
+  }
+  case ExprKind::Let: {
+    const auto &let_expr = std::get<LetExpr>(expr.data);
+    const auto bound_outcome = walk_for_admissibility(*let_expr.bound, context);
+    if (!bound_outcome.ok) {
+      return bound_outcome;
+    }
+    return walk_for_admissibility(*let_expr.body, context);
+  }
+  case ExprKind::If: {
+    const auto &if_expr = std::get<IfExpr>(expr.data);
+    const auto condition_outcome = walk_for_admissibility(*if_expr.condition, context);
+    if (!condition_outcome.ok) {
+      return condition_outcome;
+    }
+    const auto then_outcome = walk_for_admissibility(*if_expr.then_branch, context);
+    if (!then_outcome.ok) {
+      return then_outcome;
+    }
+    return walk_for_admissibility(*if_expr.else_branch, context);
+  }
+  case ExprKind::UnaryPrimitive:
+    return walk_for_admissibility(*std::get<UnaryPrimitiveExpr>(expr.data).operand, context);
+  case ExprKind::BinaryPrimitive: {
+    const auto &binary_expr = std::get<BinaryPrimitiveExpr>(expr.data);
+    const auto lhs_outcome = walk_for_admissibility(*binary_expr.lhs, context);
+    if (!lhs_outcome.ok) {
+      return lhs_outcome;
+    }
+    return walk_for_admissibility(*binary_expr.rhs, context);
+  }
+  case ExprKind::Call: {
+    for (const auto &argument : std::get<CallExpr>(expr.data).arguments) {
+      const auto outcome = walk_for_admissibility(*argument, context);
+      if (!outcome.ok) {
+        return outcome;
+      }
+    }
+    return module_ok();
+  }
+  case ExprKind::ArrayLiteral: {
+    for (const auto &element : std::get<ArrayLiteralExpr>(expr.data).elements) {
+      const auto outcome = walk_for_admissibility(*element, context);
+      if (!outcome.ok) {
+        return outcome;
+      }
+    }
+    return module_ok();
+  }
+  case ExprKind::Product: {
+    for (const auto &component : std::get<ProductExpr>(expr.data).components) {
+      const auto outcome = walk_for_admissibility(*component, context);
+      if (!outcome.ok) {
+        return outcome;
+      }
+    }
+    return module_ok();
+  }
+  case ExprKind::Len:
+    return walk_for_admissibility(*std::get<LenExpr>(expr.data).array, context);
+  case ExprKind::Proj:
+    return walk_for_admissibility(*std::get<ProjExpr>(expr.data).operand, context);
+  case ExprKind::Index: {
+    const auto &index_expr = std::get<IndexExpr>(expr.data);
+    const auto array_outcome = walk_for_admissibility(*index_expr.array, context);
+    if (!array_outcome.ok) {
+      return array_outcome;
+    }
+    return walk_for_admissibility(*index_expr.index, context);
+  }
+  case ExprKind::Var:
+  case ExprKind::Literal:
+    return module_ok(); // no child subexpressions
+  }
+  // Unreachable (exhaustive switch over every ExprKind); INT001, not a
+  // SIZ/user-facing code, matching infer_var's/infer_count_impl's own
+  // defensive branches above.
+  return module_fail(CountDiagnostic{"INT001", expr.span, "internal: unreachable expression kind"});
+}
+
 } // namespace
 
 CountOutcome infer_count(const ast::Expr &expr, const IndexContext &index_context) {
@@ -240,6 +403,20 @@ AdmissibilityOutcome check_count_admissibility(const ast::Expr &count_expr, std:
   // the same defect *shape* AM-025 already had to fix once for C-Sub.
   const auto symbol = certificate::make_symbol("idx#" + std::to_string(index_binding_id));
   return AdmissibilityOutcome{true, IndexBinding{symbol, count_outcome.result->upper}, std::nullopt};
+}
+
+// AM-027: the module-wide walker that finally invokes
+// check_count_admissibility on live AST structure. See count.hpp's doc
+// comment for the full design; walk_for_admissibility above is the
+// actual recursive traversal.
+ModuleAdmissibilityOutcome check_module_count_admissibility(const ast::Module &module) {
+  for (const auto &function : module.functions) {
+    const auto outcome = walk_for_admissibility(*function.body, IndexContext{});
+    if (!outcome.ok) {
+      return outcome;
+    }
+  }
+  return ModuleAdmissibilityOutcome{true, std::nullopt};
 }
 
 } // namespace boundfin::source::size::count

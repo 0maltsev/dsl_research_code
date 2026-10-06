@@ -157,4 +157,44 @@ struct AdmissibilityOutcome {
                                                               ast::BindingId index_binding_id,
                                                               const IndexContext &outer_context = {});
 
+struct ModuleAdmissibilityOutcome {
+  bool ok = false;
+  std::optional<CountDiagnostic> diagnostic; // the first-encountered failure, module-traversal order
+};
+
+// AM-027 (approved 2026-10-06, "separate pass" option): walks `module` --
+// expected to already be resolved (Phase 3.1) and typechecked (Phase
+// 3.2); this function does not re-derive or re-check either -- to find
+// every FoldExpr/BuildExpr at any nesting depth, in any subexpression
+// position, and admissibility-checks each via check_count_admissibility
+// above, threading the resulting IndexContext into nested bodies so an
+// inner fold/build's own count or body may reference an *enclosing*
+// fold/build's index binder (check_count_admissibility's own
+// outer_context parameter already supports this; this function is what
+// finally populates it from live AST structure instead of a caller-built
+// map). Does not modify `src/source/typecheck` -- this is the first
+// caller of check_count_admissibility reachable from outside this
+// module's own tests, closing the "FoldExpr/BuildExpr's count
+// subexpression is untyped" gap left open since Phase 3.2.
+//
+// Each function body starts its own walk with a fresh, empty
+// IndexContext: an index binder is local to its own fold/build and that
+// fold/build's lexical descendants; nothing in the grammar lets one
+// function's index binder leak into another function's body.
+//
+// First-error, in module-traversal order: `module.functions` order, and
+// within one function body, the same left-to-right, outer-before-inner
+// order already used throughout this module and by Phase 3.1's resolver.
+//
+// A FoldExpr/BuildExpr's own `count` subexpression is itself walked by
+// the same general traversal (not left to infer_count's own narrower
+// recursion): a spec-auditor review of this slice's first version found
+// and independently reproduced a counterexample where a Fold/Build
+// hidden inside the *condition* of an `if` nested in an enclosing
+// fold/build's `count` expression went unchecked (see count.cpp's
+// walk_for_admissibility doc comment for the concrete program and the
+// fix). "Any subexpression position" above is therefore accurate as
+// implemented, not merely as designed.
+[[nodiscard]] ModuleAdmissibilityOutcome check_module_count_admissibility(const ast::Module &module);
+
 } // namespace boundfin::source::size::count
