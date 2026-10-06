@@ -248,4 +248,23 @@ ShapeOutcome capshape(const ast::TypePtr &type, SourceSpan span) {
   return shape_fail("INT001", span, "internal: unreachable type kind");
 }
 
+ShapeOutcome shape_of_builder(std::optional<certificate::TermPtr> exact, certificate::TermPtr upper,
+                               std::uint32_t capacity, const ShapePtr &body_shape, SourceSpan span) {
+  if (!upper || (exact && !*exact) || !body_shape) {
+    // See shape.hpp's doc comment on shape_of_builder: this function's
+    // only real caller today is this module's own tests, not a
+    // guaranteed-valid pipeline.
+    return shape_fail("INT001", span, "internal: builder count term or body shape is null");
+  }
+  ArrayShape result;
+  result.exact = std::move(exact);
+  result.upper = std::move(upper);
+  result.capacity = capacity;
+  result.element = body_shape;
+  auto shape = std::make_shared<Shape>();
+  shape->kind = ShapeKind::Array;
+  shape->data = result;
+  return shape_ok(shape);
+}
+
 } // namespace boundfin::source::size::shape

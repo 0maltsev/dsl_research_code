@@ -151,7 +151,14 @@ struct ShapeOutcome {
 // for a later Table 8 row where the *shape itself* can be inconsistent
 // in a way Table 7 never checks, e.g. a builder/array's lambda<=u<=N --
 // neither of this function's own conditions is such a case, since both
-// are fully precluded by TYP006/TYP007 already.) `index`'s low bound
+// are fully precluded by TYP006/TYP007 already. AM-032, logged when the
+// "builder" row was later implemented: that row's own shape_of_builder
+// also does not raise SIZ007 for a lambda<=u<=N violation, despite this
+// comment's own anticipation -- see shape_of_builder's doc comment for
+// why: the invariant is already guaranteed upstream, before any
+// legitimate caller could reach that function with a violating triple,
+// so SIZ007 remains unreserved by any row implemented so far.) `index`'s
+// low bound
 // (index<1, i.e. index==0 since index is unsigned) is in fact
 // unreachable one gate earlier than TYP007: grammar.ebnf's
 // positive-decimal production forbids a literal 0 at the parser
@@ -377,5 +384,70 @@ struct ShapeOutcome {
 // `capshape` itself, which this function already provides in full for
 // the "capacity fallback" row's own scope.
 [[nodiscard]] ShapeOutcome capshape(const ast::TypePtr &type, SourceSpan span);
+
+// Table 8's "builder" row: "count `(lambda,u;nu)`, body `kappa_b(i)`" ->
+// "`array(lambda,u,N;squnion_{i<u} kappa_b(i))`" (main.pdf p.40).
+// `exact`/`upper` are the already-computed `(lambda,u)` pair from Table
+// 6's count judgment for the builder's own count expression (the same
+// "already-computed, not ast::Expr" pattern every function in this
+// module follows); `capacity` is the builder's own declared `N`;
+// `body_shape` is the already-computed shape of the builder's body
+// expression (eventually produced by this module's still-deferred
+// `infer_shape` dispatcher, under a `ShapeContext` extended with an
+// entry for the builder's own index binder -- not to be confused with
+// `src/source/size/count`'s own, differently-shaped `IndexContext`
+// (symbol + upper bound), which is a separate map this module's
+// `ShapeContext` does not carry).
+//
+// AM-031 (approved 2026-10-06): the join `squnion_{i<u} kappa_b(i)`
+// degenerates to one computation of `kappa_b` itself -- Table 8's shape
+// judgment is explicitly static (App. A.5, p.39: "does not allocate or
+// evaluate `e`; it summarises result sizes"), so a body's shape cannot
+// actually depend on which concrete runtime value the index binder `i`
+// takes, only on `i`'s symbolic count-refinement identity, which is the
+// same across every conceptual "iteration"; Table 7's T-Build further
+// confirms a builder body has no accumulator, so there is no other free
+// variable whose shape could evolve per iteration either. The result is
+// accordingly exactly `array(lambda,u,N;body_shape)`, with `body_shape`
+// used directly as `kappa_b` -- no actual per-index iteration or join
+// mechanism is built (nor is one needed: `u` may be symbolic, and this
+// design sidesteps ever needing to "iterate" over it at all). A
+// spec-auditor review independently re-derived this from main.pdf pp.9-12
+// directly and could not construct a counterexample where `kappa_b(i)`
+// actually varies with `i` under this language's current grammar.
+//
+// Null trust boundary: `upper`/`body_shape` (and any `TermPtr` inside a
+// present `exact`) are checked non-null -- `INT001`, not a SIZ code --
+// mirroring every sibling function in this module: this function's only
+// real caller today is this module's own tests, not a guaranteed-valid
+// pipeline (no `infer_shape` dispatcher exists yet to supply real,
+// already-validated inputs).
+//
+// AM-032 (approved 2026-10-06): unlike the null check above, this
+// function deliberately does NOT check "lambda<=u<=N" (main.pdf p.11:
+// "A valid shape satisfies Delta|=0<=s<=u<=N when lambda=s"), even
+// though shape_of_proj's own doc comment (second slice) specifically
+// anticipated the builder row would need exactly this check, raising
+// SIZ007 on violation. A spec-auditor review flagged this omission as
+// unreconciled; AM-032 resolves it: "u<=N" is already certified by
+// check_count_admissibility's own SIZ005 before any caller could
+// legitimately obtain a builder's own (lambda,u) pair at all; "lambda<=u"
+// is separately maintained as an invariant throughout infer_count's own
+// already-audited rule set (C-Const: lambda=u; C-If-E: the shared exact
+// is each branch's own lambda, already <= that branch's own u; C-Add/
+// C-Sub: each follows from the same invariant on their operands,
+// AM-025; C-Idx: i<u_n is the index binder's own externally-established
+// invariant). By the time check_count_admissibility returns ok=true,
+// "lambda<=u<=N" already holds for its own result, so this function's
+// only legitimate caller always supplies an already-valid triple --
+// consistent with every other function in this module trusting its
+// caller-supplied inputs. SIZ007 remains reserved for a row where this
+// invariant is NOT already guaranteed upstream by the time that row's
+// own function runs; a malformed triple reaching this function directly
+// (bypassing that upstream guarantee, e.g. in a test) is accordingly
+// accepted silently, not rejected -- a deliberate trust-boundary choice,
+// not an oversight, exercised directly by this header's own test suite.
+[[nodiscard]] ShapeOutcome shape_of_builder(std::optional<certificate::TermPtr> exact, certificate::TermPtr upper,
+                                             std::uint32_t capacity, const ShapePtr &body_shape, SourceSpan span);
 
 } // namespace boundfin::source::size::shape
