@@ -23,9 +23,11 @@ using boundfin::source::ast::SourceSpan;
 // capacity, and kappa-bar conservatively joins the shapes of every
 // logical element." Unlike src/source/size/count's Table 6 (an explicitly
 // bounded *fragment*: most expression forms correctly have no count
-// refinement, forever), Table 8 (App. A.5, p.40: "The judgment
-// Sigma;Delta;Gamma|-sz e=>kappa does not allocate or evaluate e; it
-// summarises result sizes") is a *total* judgment -- every well-typed
+// refinement, forever), Table 8 (main.pdf p.11, Sec. 4.3 main text: "The
+// judgment Sigma;Delta;Gamma|-sz e=>kappa does not allocate or evaluate
+// e; it summarises result sizes" -- not App. A.5, which restates this
+// judgment's exhaustive equations on p.39 but does not itself repeat
+// this sentence) is a *total* judgment -- every well-typed
 // expression has a Table 8 shape. This module is built incrementally,
 // one Table 8 row's dedicated function at a time (mirroring Table 6's own
 // bottom-up build order), rather than via one exhaustive dispatcher from
@@ -401,8 +403,10 @@ struct ShapeOutcome {
 //
 // AM-031 (approved 2026-10-06): the join `squnion_{i<u} kappa_b(i)`
 // degenerates to one computation of `kappa_b` itself -- Table 8's shape
-// judgment is explicitly static (App. A.5, p.39: "does not allocate or
-// evaluate `e`; it summarises result sizes"), so a body's shape cannot
+// judgment is explicitly static (main.pdf p.11, Sec. 4.3 main text:
+// "does not allocate or evaluate `e`; it summarises result sizes" --
+// not App. A.5, p.39, which a spec-auditor review of the eighth slice
+// found this citation had been misattributed to), so a body's shape cannot
 // actually depend on which concrete runtime value the index binder `i`
 // takes, only on `i`'s symbolic count-refinement identity, which is the
 // same across every conceptual "iteration"; Table 7's T-Build further
@@ -449,5 +453,97 @@ struct ShapeOutcome {
 // not an oversight, exercised directly by this header's own test suite.
 [[nodiscard]] ShapeOutcome shape_of_builder(std::optional<certificate::TermPtr> exact, certificate::TermPtr upper,
                                              std::uint32_t capacity, const ShapePtr &body_shape, SourceSpan span);
+
+// Table 8's "fold" row: "`kappa_0, kappa_i+1 = Kb(i,kappa_i)`" ->
+// "`kappa_s` for exact `s`; otherwise `squnion_{0<=j<=u} kappa_j`"
+// (main.pdf p.40). Unlike every row above, this one is a genuine
+// recurrence over shapes, not a single already-computed-inputs-in,
+// single-shape-out function -- `Kb` (App. A.5, p.39: "the body shape
+// transformer checked under its index/accumulator binders") takes both
+// the index binder `i` and the accumulator's own current shape
+// `kappa_i`, unlike the "builder" row's `kappa_b(i)` (no accumulator
+// exists for a builder, T-Build). AM-033 (approved 2026-10-07) scopes
+// this slice narrowly, via a re-derivation of AM-031's own "static
+// judgment, no value-dependence on the index" argument (already
+// independently spec-auditor-confirmed for builder's kappa_b(i)):
+// since the shape judgment "does not allocate or evaluate e; it
+// summarises result sizes" (main.pdf p.11, Sec. 4.3 main text -- not
+// App. A.5, p.39, a misattribution a spec-auditor review of this slice
+// found carried forward from AM-031's own citation, corrected here and
+// in shape_of_builder's doc comment above), the fold body's shape
+// derivation cannot observe `i`'s concrete runtime value at any
+// iteration -- only its fixed symbolic count-refinement identity, the
+// same at every conceptual iteration. `Kb`'s explicit `i`-argument is
+// accordingly read as existing only because the body is typed/shaped
+// *under* both binders textually (T-Fold: `Gamma,i:idx(N),x:tau_x`),
+// not because the transformer's *output* shape can depend on `i`'s
+// value -- so `Kb` reduces to a single pure function `F(kappa)` of the
+// accumulator's own shape alone.
+//
+// Under that reading, checking *one* application, `F(kappa_0)` against
+// `kappa_0`, soundly decides the entire (possibly symbolic-length)
+// recurrence by induction: if `F(kappa_0)=kappa_0`, then `F` applied
+// again to `kappa_0` still yields `kappa_0`, so `kappa_j=kappa_0` for
+// *every* iteration index `j>=0` -- for any exact `s` (even a
+// non-literal symbol) or upper bound `u` (even non-literal), with no
+// unrolling and no new "symbolic iteration" machinery. `initial_shape`
+// is the already-computed `kappa_0` (the fold's initial-accumulator
+// expression's own shape); `step_shape` is the already-computed
+// `kappa_1=F(kappa_0)` (the fold body's own shape, evaluated under a
+// ShapeContext where the accumulator binder is bound to `kappa_0` --
+// the same "already-computed, not ast::Expr" pattern every function in
+// this module follows; this function does not itself iterate or call
+// any dispatcher). Comparing the two distinguishes two different
+// reasons they can fail to coincide, mirroring join_shapes's own
+// AM-028-settled distinction between a trust-boundary mismatch and a
+// real result: a *structural* mismatch (different kind, array capacity,
+// or product arity at any level) is a caller precondition violation --
+// `INT001`, not a SIZ code -- since T-Fold/TYP010 already guarantees
+// the body's synthesized type matches the accumulator's own declared
+// type at every iteration, so `initial_shape` and `step_shape` provably
+// share the same static type for any real, legitimately-typechecked
+// fold, the identical reasoning join_shapes's own mismatch branches
+// already rely on. Within a shared structure, if every exact/upper
+// term (certificate::terms_equal) and every nested element/component
+// shape also matches, the result is `initial_shape` itself (returned by
+// pointer identity, mirroring shape_of_builder's own test discipline)
+// -- sound for any count, exact or inexact, literal or symbolic.
+//
+// If the structure matches but some exact/upper term or nested
+// element/component genuinely differs, this function raises `SIZ008`
+// ("Recursive element-shape join or fold recurrence cannot be formed")
+// rather than guess: a genuinely shape-varying accumulator (e.g. a fold
+// that reconstructs a logically-growing array accumulator each
+// iteration) needs either bounded literal-count unrolling (only
+// possible when the count is a known compile-time literal) or a
+// general fixed-point/widening solver -- neither built anywhere in this
+// project -- so it is conservatively rejected, spending SIZ008 exactly
+// where AM-028 (2026-10-06) reserved it ("folding over a symbolic
+// iteration count that cannot be mechanically enumerated... some other
+// proof technique (e.g. an inductive/fixed-point argument over Kb)
+// would be needed instead, and failing to produce one is what SIZ008
+// names"), and matching main.pdf p.10's general fallback principle ("a
+// true formula for which no accepted certificate is supplied is
+// conservatively rejected") generalized here to shape derivation. This
+// is sound but disclosed-incomplete: a fold whose accumulator shape
+// genuinely stabilizes only after *more than one* step, one a bounded
+// literal-count unrolling could otherwise accept, or one that
+// oscillates without ever converging to a single fixed shape (a
+// spec-auditor review of this slice confirmed such a case is real and
+// grammar-expressible -- a product accumulator whose body swaps two
+// differently-shaped components each iteration has period exactly two,
+// kappa_2=kappa_0 -- and confirmed this function still rejects it
+// conservatively via SIZ008 rather than wrongly accepting it; see
+// test_shape_fold.cpp's own period-two regression test), is still
+// rejected by this slice -- left to a future, separately-scoped slice,
+// not hidden (AM-033's own "Scientific effect" entry).
+//
+// Null trust boundary: `initial_shape`/`step_shape` are checked
+// non-null -- `INT001`, not a SIZ code -- mirroring every sibling
+// function in this module: this function's only real caller today is
+// this module's own tests, not a guaranteed-valid pipeline (no
+// `infer_shape` dispatcher exists yet to supply real, already-validated
+// inputs).
+[[nodiscard]] ShapeOutcome shape_of_fold(const ShapePtr &initial_shape, const ShapePtr &step_shape, SourceSpan span);
 
 } // namespace boundfin::source::size::shape

@@ -10,6 +10,86 @@ ShapeOutcome shape_fail(std::string code, SourceSpan span, std::string message) 
 
 ShapeOutcome shape_ok(ShapePtr shape) { return ShapeOutcome{true, std::move(shape), std::nullopt}; }
 
+// Structural shape comparison, used only by shape_of_fold's own
+// fixed-point check (see shape.hpp's doc comment on shape_of_fold and
+// AM-033). Three-valued, not boolean, to distinguish two different
+// reasons two shapes can fail to coincide: `Incompatible` (different
+// kind, array capacity, or product arity at some level -- a structural
+// mismatch that T-Fold/TYP010 already rules out for any real,
+// legitimately-typechecked fold, since the body's synthesized type is
+// required to match the accumulator's own declared type at every
+// iteration; this mirrors join_shapes's own AM-028-settled "a kind/
+// capacity/arity mismatch is a caller precondition violation, not a
+// program property" reasoning, applied here to the identical situation)
+// versus `Differs` (same structural shape, but an exact/upper term or a
+// nested element/component genuinely differs -- the real "fold
+// recurrence cannot be formed" case SIZ008 was reserved for). A null
+// child anywhere is `Incompatible`, matching every other null-safety
+// check in this module.
+enum class ShapeComparison { Equal, Differs, Incompatible };
+
+ShapeComparison compare_shapes(const ShapePtr &first, const ShapePtr &second) {
+  if (!first || !second) {
+    return ShapeComparison::Incompatible;
+  }
+  if (first->kind != second->kind) {
+    return ShapeComparison::Incompatible;
+  }
+  switch (first->kind) {
+  case ShapeKind::Scalar:
+    return ShapeComparison::Equal;
+  case ShapeKind::Array: {
+    const auto &first_array = std::get<ArrayShape>(first->data);
+    const auto &second_array = std::get<ArrayShape>(second->data);
+    if (first_array.capacity != second_array.capacity) {
+      return ShapeComparison::Incompatible;
+    }
+    const auto element_comparison = compare_shapes(first_array.element, second_array.element);
+    if (element_comparison == ShapeComparison::Incompatible) {
+      return ShapeComparison::Incompatible;
+    }
+    bool differs = element_comparison == ShapeComparison::Differs;
+    if (first_array.exact.has_value() != second_array.exact.has_value()) {
+      differs = true;
+    } else if (first_array.exact) {
+      if (!*first_array.exact || !*second_array.exact) {
+        return ShapeComparison::Incompatible;
+      }
+      if (!certificate::terms_equal(**first_array.exact, **second_array.exact)) {
+        differs = true;
+      }
+    }
+    if (!first_array.upper || !second_array.upper) {
+      return ShapeComparison::Incompatible;
+    }
+    if (!certificate::terms_equal(*first_array.upper, *second_array.upper)) {
+      differs = true;
+    }
+    return differs ? ShapeComparison::Differs : ShapeComparison::Equal;
+  }
+  case ShapeKind::Product: {
+    const auto &first_components = std::get<ProductShape>(first->data).components;
+    const auto &second_components = std::get<ProductShape>(second->data).components;
+    if (first_components.size() != second_components.size()) {
+      return ShapeComparison::Incompatible;
+    }
+    bool differs = false;
+    for (std::size_t i = 0; i < first_components.size(); ++i) {
+      const auto component_comparison = compare_shapes(first_components[i], second_components[i]);
+      if (component_comparison == ShapeComparison::Incompatible) {
+        return ShapeComparison::Incompatible;
+      }
+      if (component_comparison == ShapeComparison::Differs) {
+        differs = true;
+      }
+    }
+    return differs ? ShapeComparison::Differs : ShapeComparison::Equal;
+  }
+  }
+  // Unreachable (exhaustive switch over every ShapeKind).
+  return ShapeComparison::Incompatible;
+}
+
 } // namespace
 
 ShapePtr scalar_shape() {
@@ -265,6 +345,39 @@ ShapeOutcome shape_of_builder(std::optional<certificate::TermPtr> exact, certifi
   shape->kind = ShapeKind::Array;
   shape->data = result;
   return shape_ok(shape);
+}
+
+ShapeOutcome shape_of_fold(const ShapePtr &initial_shape, const ShapePtr &step_shape, SourceSpan span) {
+  if (!initial_shape || !step_shape) {
+    // See shape.hpp's doc comment on shape_of_fold: this function's only
+    // real caller today is this module's own tests, not a guaranteed-valid
+    // pipeline.
+    return shape_fail("INT001", span, "internal: fold initial or step shape is null");
+  }
+  switch (compare_shapes(initial_shape, step_shape)) {
+  case ShapeComparison::Equal:
+    // AM-033: a genuine fixed point (F(kappa_0)=kappa_0) holds for every
+    // iteration by induction, regardless of whether the fold's count is
+    // exact or inexact, literal or symbolic.
+    return shape_ok(initial_shape);
+  case ShapeComparison::Differs:
+    // AM-033: a genuinely shape-varying accumulator is conservatively
+    // rejected rather than guessed at -- this project has not built
+    // bounded literal-count unrolling or a general fixed-point/widening
+    // solver for this case. SIZ008 was reserved by AM-028 for exactly
+    // this problem.
+    return shape_fail("SIZ008", span, "fold recurrence cannot be formed: accumulator shape varies across iterations");
+  case ShapeComparison::Incompatible:
+    // T-Fold/TYP010 already guarantees the fold body's synthesized type
+    // matches the accumulator's own declared type at every iteration, so
+    // a structural (kind/capacity/arity) mismatch here is a caller
+    // precondition violation, not a genuine shape-variation fact --
+    // mirrors join_shapes's own AM-028-settled trust-boundary reasoning,
+    // applied to this function's own two inputs.
+    return shape_fail("INT001", span, "internal: fold initial and step shapes are structurally incompatible");
+  }
+  // Unreachable (exhaustive switch over every ShapeComparison value).
+  return shape_fail("INT001", span, "internal: unreachable shape comparison");
 }
 
 } // namespace boundfin::source::size::shape
