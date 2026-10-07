@@ -14,6 +14,7 @@ using namespace boundfin::source::ast;
 using boundfin::source::parse::parse_module;
 using boundfin::source::resolve::resolve_module;
 using boundfin::source::size::certificate::make_literal;
+using boundfin::source::size::certificate::make_symbol;
 using boundfin::source::size::certificate::terms_equal;
 using boundfin::source::size::infer::compute_function_summary;
 using boundfin::source::size::shape::ArrayShape;
@@ -171,6 +172,31 @@ void compute_function_summary_propagates_a_Kf_failure_as_a_whole_summary_failure
   BOUNDFIN_CHECK_EQ(outcome.diagnostic->code, std::string("SIZ013"));
 }
 
+// The live-wiring slice (AM-035 step 5's own disclosed follow-up,
+// confirmed via AskUserQuestion, 2026-10-07): compute_function_summary's
+// own new, optional `module`/`sigma` trailing parameters (default
+// null/empty, matching infer_shape's identical convention) thread
+// straight through to its internal infer_shape call for k_f -- when
+// BOTH are supplied, a call inside the body resolves instead of failing
+// SIZ013 (the preceding test's own default-opt-out behavior, confirmed
+// still unchanged above).
+void compute_function_summary_resolves_a_call_when_module_and_sigma_are_supplied() {
+  const auto module =
+      parse_and_typecheck("fn g(xs: arr<i32, 8>): arr<i32, 8> = xs;\nfn f(ys: arr<i32, 8>): arr<i32, 8> = g(ys);\n"
+                           "export f;\n");
+  const auto g_summary = compute_function_summary(module.functions[0]);
+  BOUNDFIN_CHECK(g_summary.ok);
+  const boundfin::source::size::infer::SigmaContext sigma{{0, *g_summary.result}};
+
+  const auto outcome = compute_function_summary(module.functions[1], &module, sigma);
+  BOUNDFIN_CHECK(outcome.ok);
+  BOUNDFIN_CHECK(outcome.result->k_f->kind == ShapeKind::Array);
+  const auto &f_array = std::get<ArrayShape>(outcome.result->k_f->data);
+  const auto &ys_param = module.functions[1].parameters[0];
+  BOUNDFIN_CHECK(f_array.exact.has_value());
+  BOUNDFIN_CHECK(terms_equal(**f_array.exact, *make_symbol("abi#" + std::to_string(*ys_param.binding))));
+}
+
 void boundfin_function_summary() {
   compute_function_summary_of_a_literal_body();
   compute_function_summary_seeds_scalar_parameters_but_Qf_is_absent_for_a_bare_reference();
@@ -181,6 +207,7 @@ void boundfin_function_summary() {
   compute_function_summary_seeds_an_all_scalar_product_parameter();
   compute_function_summary_seeds_a_product_parameter_with_a_nested_array_via_capshape();
   compute_function_summary_propagates_a_Kf_failure_as_a_whole_summary_failure();
+  compute_function_summary_resolves_a_call_when_module_and_sigma_are_supplied();
 }
 
 } // namespace

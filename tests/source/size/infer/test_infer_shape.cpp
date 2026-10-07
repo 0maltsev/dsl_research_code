@@ -14,8 +14,11 @@ using namespace boundfin::source::ast;
 using boundfin::source::parse::parse_module;
 using boundfin::source::resolve::resolve_module;
 using boundfin::source::size::certificate::make_literal;
+using boundfin::source::size::certificate::make_symbol;
 using boundfin::source::size::certificate::terms_equal;
+using boundfin::source::size::infer::compute_function_summary;
 using boundfin::source::size::infer::infer_shape;
+using boundfin::source::size::infer::SigmaContext;
 using boundfin::source::size::shape::ArrayShape;
 using boundfin::source::size::shape::ProductShape;
 using boundfin::source::size::shape::ShapeContext;
@@ -262,6 +265,79 @@ void infer_shape_of_a_call_rejects_with_SIZ013() {
   BOUNDFIN_CHECK_EQ(outcome.diagnostic->code, std::string("SIZ013"));
 }
 
+// The live-wiring slice (AM-035 step 5's own disclosed follow-up,
+// confirmed via AskUserQuestion, 2026-10-07): a non-null `module` (with
+// a `sigma` that has the callee's own entry) is this dispatcher's own
+// signal to resolve a Call via infer_call instead of the preceding
+// test's own default SIZ013 -- exercised here directly at the public
+// infer_shape entry point, not via compute_function_summary/
+// compute_module_summaries.
+void infer_shape_of_a_call_resolves_when_module_and_sigma_are_supplied() {
+  const auto module =
+      parse_and_typecheck("fn g(xs: arr<i32, 8>): arr<i32, 8> = xs;\nfn f(ys: arr<i32, 8>): arr<i32, 8> = g(ys);\n"
+                           "export f;\n");
+  const auto g_summary = compute_function_summary(module.functions[0]);
+  BOUNDFIN_CHECK(g_summary.ok);
+  const SigmaContext sigma{{0, *g_summary.result}};
+
+  const auto &ys_param = module.functions[1].parameters[0];
+  auto ys_shape = std::make_shared<boundfin::source::size::shape::Shape>();
+  ys_shape->kind = ShapeKind::Array;
+  const auto ys_symbol = make_symbol("abi#" + std::to_string(*ys_param.binding));
+  ArrayShape ys_data;
+  ys_data.exact = ys_symbol;
+  ys_data.upper = ys_symbol;
+  ys_data.capacity = 8;
+  ys_data.element = boundfin::source::size::shape::scalar_shape();
+  ys_shape->data = ys_data;
+  ShapeContext shape_context{{*ys_param.binding, ys_shape}};
+
+  const auto outcome = infer_shape(*module.functions[1].body, shape_context, {}, &module, sigma);
+  BOUNDFIN_CHECK(outcome.ok);
+  BOUNDFIN_CHECK((*outcome.result)->kind == ShapeKind::Array);
+  const auto &result_array = std::get<ArrayShape>((*outcome.result)->data);
+  BOUNDFIN_CHECK(result_array.exact.has_value());
+  BOUNDFIN_CHECK(terms_equal(**result_array.exact, *ys_symbol));
+}
+
+// Confirms module/sigma genuinely thread all the way through nested
+// recursion, not just a top-level Call -- the SAME threading infer_let's
+// own TWO recursive infer_shape_impl calls now carry. This case targets
+// the "bound" position (`let x = g() in x`); the next case targets the
+// "body" position specifically, since a spec-auditor review of this
+// slice found only one of infer_let's two recursive positions had its
+// own dedicated test -- both ARE threaded identically and mechanically
+// (confirmed by direct code reading, and the compiler itself enforces
+// every infer_shape_impl call site supplies all 5 arguments, since its
+// own forward declaration has no defaults), but a dedicated test closes
+// the gap between "confirmed by reading" and "confirmed by a test."
+void infer_shape_resolves_a_call_nested_inside_a_lets_bound_expression() {
+  const auto module = parse_and_typecheck(
+      "fn g(): i32 = i32bits(0x00000001);\nfn f(): i32 = let x = g() in x;\nexport f;\n");
+  const auto g_summary = compute_function_summary(module.functions[0]);
+  BOUNDFIN_CHECK(g_summary.ok);
+  const SigmaContext sigma{{0, *g_summary.result}};
+
+  const auto outcome = infer_shape(*module.functions[1].body, {}, {}, &module, sigma);
+  BOUNDFIN_CHECK(outcome.ok);
+  BOUNDFIN_CHECK((*outcome.result)->kind == ShapeKind::Scalar);
+}
+
+// The "body" position of a let (`let x = ... in g()`) -- infer_let's
+// second recursive infer_shape_impl call, distinct from the preceding
+// test's own "bound" position.
+void infer_shape_resolves_a_call_nested_inside_a_lets_body_expression() {
+  const auto module = parse_and_typecheck(
+      "fn g(): i32 = i32bits(0x00000001);\nfn f(): i32 = let x = i32bits(0x00000000) in g();\nexport f;\n");
+  const auto g_summary = compute_function_summary(module.functions[0]);
+  BOUNDFIN_CHECK(g_summary.ok);
+  const SigmaContext sigma{{0, *g_summary.result}};
+
+  const auto outcome = infer_shape(*module.functions[1].body, {}, {}, &module, sigma);
+  BOUNDFIN_CHECK(outcome.ok);
+  BOUNDFIN_CHECK((*outcome.result)->kind == ShapeKind::Scalar);
+}
+
 // A fold nested inside a build's own body threads index_context
 // correctly: the inner fold's own count can reference the outer build's
 // index binder, confirming extended_index_context genuinely propagates
@@ -290,6 +366,9 @@ void boundfin_infer_shape() {
   infer_shape_of_a_fold_checks_count_admissibility_before_initial();
   infer_shape_of_a_build_whose_count_is_len_of_an_already_shaped_variable_is_not_yet_supported();
   infer_shape_of_a_call_rejects_with_SIZ013();
+  infer_shape_of_a_call_resolves_when_module_and_sigma_are_supplied();
+  infer_shape_resolves_a_call_nested_inside_a_lets_bound_expression();
+  infer_shape_resolves_a_call_nested_inside_a_lets_body_expression();
   infer_shape_of_a_build_containing_a_nested_fold_referencing_its_index();
 }
 

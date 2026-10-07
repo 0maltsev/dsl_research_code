@@ -145,17 +145,18 @@ void infer_call_only_substitutes_at_array_typed_parameter_positions() {
 // Propagates a failure encountered while computing an actual argument's
 // own shape AT AN ARRAY-TYPED PARAMETER POSITION -- genuinely
 // load-bearing for the substitution, unlike a scalar/product position
-// (see the next test). The argument itself is a nested call expression,
-// which infer_shape's own dispatcher still rejects with SIZ013 (this
-// slice deliberately does not wire infer_call into that dispatcher yet,
-// see infer.hpp's own doc comment on SigmaContext/infer_call), a
-// convenient way to make an argument's own shape computation fail for
-// this test. A spec-auditor review of this slice's first version found
-// the equivalent test here used a SCALAR parameter position instead,
-// which (after this slice's own fix, restricting shape computation to
-// array-typed positions only) would no longer even visit the failing
-// argument at all -- this version replaces it with a genuinely
-// load-bearing case.
+// (see the next test). The argument itself is a nested call expression;
+// since the live-wiring slice (below) threads `module`/`sigma` into
+// `infer_call`'s own internal argument-shape computation, this nested
+// call is now genuinely resolved against `sigma`, not unconditionally
+// rejected -- and `sigma` deliberately has no entry for `inner` (rank 0)
+// here, so the nested call correctly fails with `INT001` ("Sigma has no
+// entry"), which is what this test now exercises propagating. (Before
+// the live-wiring slice, `infer_call`'s own internal recursion never had
+// `module`/`sigma` at all, so a nested call was unconditionally
+// unreachable -- SIZ013 regardless of `sigma`'s own content; this test's
+// own expectation is updated to match the now-live, fully-wired
+// dispatcher, not a regression.)
 void infer_call_propagates_a_failure_from_a_load_bearing_actual_argument() {
   const auto module = parse_and_typecheck("fn inner(): arr<i32, 8> = array<8>[i32bits(0x00000000)];\n"
                                            "fn helper(xs: arr<i32, 8>): arr<i32, 8> = xs;\n"
@@ -163,18 +164,11 @@ void infer_call_propagates_a_failure_from_a_load_bearing_actual_argument() {
                                            "export caller;\n");
   const auto helper_summary = compute_function_summary(module.functions[1]);
   BOUNDFIN_CHECK(helper_summary.ok);
-  // sigma has no entry for inner (rank 0) -- irrelevant to this test's
-  // own outcome, though: infer_shape_impl's ExprKind::Call case rejects
-  // EVERY call expression with SIZ013 unconditionally, without ever
-  // consulting sigma (infer_call is not wired into that dispatcher yet,
-  // see infer.hpp's own doc comment) -- a second, independent re-audit
-  // found an earlier version of this comment implied a dependency on
-  // sigma's own contents that does not actually exist; corrected.
-  const SigmaContext sigma{{1, *helper_summary.result}};
+  const SigmaContext sigma{{1, *helper_summary.result}}; // deliberately no entry for inner (rank 0)
 
   const auto outcome = infer_call(call_expr_of(module), call_span(module), module, sigma, {}, {});
   BOUNDFIN_CHECK(!outcome.ok);
-  BOUNDFIN_CHECK_EQ(outcome.diagnostic->code, std::string("SIZ013"));
+  BOUNDFIN_CHECK_EQ(outcome.diagnostic->code, std::string("INT001"));
 }
 
 // Confirms the fix's own positive case directly: a failing argument at a
