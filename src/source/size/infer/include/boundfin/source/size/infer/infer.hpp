@@ -87,4 +87,129 @@ using boundfin::source::ast::SourceSpan;
 [[nodiscard]] shape::ShapeOutcome infer_shape(const ast::Expr &expr, const shape::ShapeContext &shape_context = {},
                                                const count::IndexContext &index_context = {});
 
+// Step 3 of `AM-035`'s five-step declaration-rank induction ladder:
+// `Sigma(f)=(signature, K_f, Q_f?, Phi_f, rank)` construction (`AM-003`)
+// for a single, *call-free* function declaration -- the first point this
+// project can exercise "`K_f(n-vec)` is checked with the body and stored
+// in `Sigma`" (main.pdf p.12) end to end, still without needing a
+// substitution mechanism (step 4), since the call graph is acyclic
+// (`f precedes_M g`, Phase 3.1's resolver) and a function with no
+// earlier declarations to call cannot contain a `CallExpr` at all.
+//
+// This struct holds only the two NEWLY-COMPUTED parts of `Sigma(f)`:
+// `signature` (the function's own declared parameter/result types) and
+// `rank` (its own 0-based position in `ast::Module::functions`, source
+// order) are already directly available on the `ast::FunctionDecl`/its
+// enclosing `ast::Module` without needing separate computation here, so
+// this struct does not duplicate them; `Phi_f` (the cost/footprint
+// transformer, main.pdf Sec. 6) is Phase 5's own, entirely separate
+// concern, out of this module's scope.
+//
+// `k_f` is literally the function body's own already-computed Table 8
+// shape (`infer_shape` on the body) -- not a separately-represented
+// "transformer object." It is *parameterized* over the function's own
+// ABI formal-length symbols (minted by `shape::shape_of_abi_array_param`
+// while seeding the initial `ShapeContext` below) because those `n_x`
+// symbols appear directly inside the computed shape's own `exact`/
+// `upper` terms wherever the body's own arithmetic/joins propagate them
+// -- main.pdf p.12's own "At a call, exact or upper actual length
+// expressions are substituted simultaneously into `K_f`" describes
+// exactly this: substituting a concrete actual term for each `n_x`
+// symbol inside an already-computed `k_f` value (deferred to step 4/5).
+//
+// `q_f` is present only when the function's declared result type is
+// `i32` AND the body has an accepted count-refinement derivation
+// (`AM-003`'s own exact wording), computed via `count::infer_count` on
+// the body under the identical seeded `ShapeContext` (needed for any
+// `C-Len-E`/`C-Len-U` use within the body). Absent (`std::nullopt`), NOT
+// an error, both for any other declared result type and for an i32
+// -result body whose own count-refinement derivation fails with a
+// SIZ-coded diagnostic, for ANY such code -- `AM-003`'s own text is
+// explicit on this: "If Q_f is absent, the call is legal as an ordinary
+// expression but prohibited in the count fragment," meaning a failed
+// derivation never rejects the function itself, only narrows how it may
+// later be called. Unlike `k_f` (unconditionally required, main.pdf
+// p.12 -- its own failure DOES fail `compute_function_summary` as a
+// whole), a missing `q_f` is the ordinary, expected outcome for most
+// i32-result bodies: e.g. `a+b` for two ordinary scalar parameters
+// always fails with `SIZ003` (Table 6 has no `C-Var` rule for an
+// arbitrary, non-index-binder variable at all), correctly, with no
+// implication the function itself is malformed. An `INT0xx`-coded
+// failure is the one exception -- it genuinely IS propagated as a
+// `compute_function_summary` failure, not absorbed, since an internal-
+// invariant violation (diagnostics-and-status.md's own INT catalogue:
+// "never presented as user source rejection") is categorically not "no
+// accepted derivation" the way a SIZ code is (a spec-auditor review of
+// this slice's first version found the absorption had no such exception
+// and fixed it).
+struct FunctionSummary {
+  shape::ShapePtr k_f;
+  std::optional<count::CountResult> q_f;
+};
+
+// Reuses `shape::ShapeDiagnostic`'s own `{code,span,message}` shape
+// rather than inventing a fourth near-identical diagnostic struct
+// (`shape`/`count`/`infer_shape`'s own internal helper already have
+// two) -- `compute_function_summary`'s own failures are always either a
+// `shape::ShapeOutcome` or `count::CountOutcome` failure propagated
+// through unchanged, or an `INT001`/`SIZ013` this function raises
+// itself in exactly the same shape.
+struct FunctionSummaryOutcome {
+  bool ok = false;
+  std::optional<FunctionSummary> result;
+  std::optional<shape::ShapeDiagnostic> diagnostic;
+};
+
+// Seeds a `ShapeContext` for every one of `function`'s own parameters
+// (required before `infer_shape`/`infer_count` can process the body at
+// all -- `shape_of_var`'s own trust boundary requires a context entry
+// for *any* variable reference, including an ordinary scalar parameter,
+// not just ABI array ones): an array-typed parameter whose OWN top-level
+// declared type is `arr<tau,N>` gets `shape_of_abi_array_param`'s own
+// result (a fresh, tight formal length `n_x` minted from this
+// parameter's own binding, main.pdf p.11 main text). Every other
+// parameter type (scalar, or product, at any nesting depth) gets
+// `capshape(parameter.type, span)` directly -- `capshape` is already
+// general over the whole Type grammar: for a scalar type this is
+// identical to `scalar_shape()` (no case split needed); for a product it
+// recurses component-wise via `shape_of_product`, applying this same
+// treatment to each field in turn, so an all-scalar product has a fully
+// -determined shape with zero remaining ambiguity, and a product field
+// that is itself an array gets the "capacity fallback" row's own
+// conservative `array(star,N,N;capshape(tau))` (sound, not unsound --
+// no fresh formal-length symbol is minted for it, since a nested field
+// has no independent binding to mint one from).
+//
+// A spec-auditor review of this slice's first version found it instead
+// rejected EVERY product-typed parameter outright with `SIZ013`,
+// justified by a citation to `shape_of_abi_array_param`'s own doc
+// comment (step 1) that, on direct re-reading, did not actually support
+// blanket rejection: that comment's own disclosed gap is narrowly
+// "whether such a nested array independently needs its own fresh formal
+// length symbol, or falls back to `capshape`'s own star-shaped
+// conservative treatment" -- naming `capshape` as an available, sound
+// fallback, not an unresolved blocker, and saying nothing at all about
+// an all-scalar product, which has no array anywhere in it and
+// therefore no ambiguity whatsoever. This was an unescalated,
+// inaccurately-justified scope decision (the kind `CLAUDE.md` Sec. 5
+// requires a stop for), not a forced consequence of prior precedent --
+// fixed by using `capshape` directly, which the prior disclosure had
+// already anticipated and approved as the right fallback. The one
+// genuinely open question that remains, deferred and disclosed (not
+// silently resolved): whether a future slice should mint an array field
+// nested inside a product parameter its own fresh formal-length symbol
+// (e.g. via some synthetic per-field naming scheme) rather than always
+// falling back to `capshape`'s own conservative, non-tightest treatment.
+//
+// Then computes `k_f` via `infer_shape` and, when `function.result_type`
+// is `i32`, `q_f` via `count::infer_count`, both under the seeded
+// context. Does **not** itself check that `function.body` is call-free:
+// `infer_shape`'s own `SIZ013` (for `CallExpr`, see above) and
+// `count::infer_count`'s own `SIZ003` (Table 6 genuinely has no `C-Call`
+// implemented either, the pre-existing, already-shipped fallback every
+// unimplemented `ExprKind` shares in that module) already propagate
+// naturally through whichever recursive dispatch reaches a call anywhere
+// in the body, so no separate up-front precondition check is needed.
+[[nodiscard]] FunctionSummaryOutcome compute_function_summary(const ast::FunctionDecl &function);
+
 } // namespace boundfin::source::size::infer

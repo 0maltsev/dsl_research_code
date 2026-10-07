@@ -351,11 +351,17 @@ struct ShapeOutcome {
 // entry there is merely stored, not immediately crashed on; `capshape`
 // does dereference `type->kind` immediately, at every recursion level,
 // making a null input a crash, not a latent bad value) -- and found
-// `capshape`'s *only actual caller today* is this module's own tests
-// (no `infer_shape` dispatcher exists yet to supply a real, Phase-3.2-
-// guaranteed-non-null `ast::TypePtr`), i.e. exactly the "constructed by
-// hand, can get wrong" risk category the original doc comment claimed
-// was unique to `Shape`, not `Type`. Null-checking here instead matches
+// `capshape`'s *only actual caller at the time this was written* was
+// this module's own tests (no `infer_shape` dispatcher existed yet to
+// supply a real, Phase-3.2-guaranteed-non-null `ast::TypePtr`), i.e.
+// exactly the "constructed by hand, can get wrong" risk category the
+// original doc comment claimed was unique to `Shape`, not `Type`. This
+// null-safety reasoning remains valid now that a real production caller
+// exists too (`src/source/size/infer`'s `compute_function_summary`,
+// AM-035 step 3, which calls `capshape` directly on a product/scalar
+// ABI parameter's own already-typechecked, genuinely-non-null type) --
+// the defensive check costs nothing extra for that caller and still
+// protects every hand-built test input. Null-checking here instead matches
 // this project's established house convention for exactly this role (a
 // function that is "the trust boundary" over a possibly-malformed
 // pointer-bearing tree it dereferences): `src/source/size/certificate`'s

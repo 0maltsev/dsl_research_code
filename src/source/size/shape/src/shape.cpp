@@ -280,10 +280,12 @@ ShapeOutcome shape_of_index(const ShapePtr &array_shape, SourceSpan span) {
 
 ShapeOutcome capshape(const ast::TypePtr &type, SourceSpan span) {
   if (!type) {
-    // See shape.hpp's doc comment: capshape's only actual caller today
-    // is this module's own tests, not a guaranteed-non-null Phase 3.2
-    // pipeline, so this is checked the same as every other function in
-    // this module.
+    // See shape.hpp's doc comment: this slice's own tests were capshape's
+    // only caller when this check was added; src/source/size/infer's
+    // compute_function_summary (AM-035 step 3) is a real production
+    // caller now, but the check stays -- it costs nothing for a
+    // guaranteed-non-null caller and still protects every hand-built
+    // test input.
     return shape_fail("INT001", span, "internal: capshape type is null");
   }
   switch (type->kind) {

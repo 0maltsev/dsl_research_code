@@ -284,4 +284,134 @@ ShapeOutcome infer_shape(const ast::Expr &expr, const shape::ShapeContext &shape
   return infer_shape_impl(expr, shape_context, index_context);
 }
 
+namespace {
+
+FunctionSummaryOutcome summary_fail(std::string code, SourceSpan span, std::string message) {
+  return FunctionSummaryOutcome{false, std::nullopt, ShapeDiagnostic{std::move(code), span, std::move(message)}};
+}
+
+FunctionSummaryOutcome summary_ok(FunctionSummary summary) {
+  return FunctionSummaryOutcome{true, std::move(summary), std::nullopt};
+}
+
+} // namespace
+
+FunctionSummaryOutcome compute_function_summary(const ast::FunctionDecl &function) {
+  ShapeContext shape_context;
+  for (const auto &parameter : function.parameters) {
+    if (!parameter.binding) {
+      // Unreachable for a resolver-processed module; mirrors every
+      // sibling module's identical defensive branch.
+      return summary_fail("INT001", parameter.span, "internal: parameter has no resolved binding");
+    }
+    if (!parameter.type) {
+      return summary_fail("INT001", parameter.span, "internal: parameter has no declared type");
+    }
+    switch (parameter.type->kind) {
+    case TypeKind::Array: {
+      // The top-level ABI-array-parameter rule (main.pdf p.11 main text)
+      // applies only to a parameter whose OWN declared type is directly
+      // arr<tau,N> -- mints a fresh, tight formal length n_x from this
+      // parameter's own binding.
+      const auto outcome = shape::shape_of_abi_array_param(parameter.type, *parameter.binding, parameter.span);
+      if (!outcome.ok) {
+        return FunctionSummaryOutcome{false, std::nullopt, outcome.diagnostic};
+      }
+      shape_context[*parameter.binding] = *outcome.result;
+      break;
+    }
+    case TypeKind::Bool:
+    case TypeKind::I32:
+    case TypeKind::I64:
+    case TypeKind::F64:
+    case TypeKind::Product: {
+      // A spec-auditor review of this slice's first version found the
+      // Product case wrongly rejected with SIZ013 (not yet supported) --
+      // factually wrong for an all-scalar product (shape_of_product
+      // composed with scalar_shape() for every field has zero remaining
+      // ambiguity) and, even for a product containing a nested array
+      // field, the rejection was unnecessary: shape_of_abi_array_param's
+      // own doc comment (step 1) already disclosed and anticipated
+      // exactly this gap -- "whether such a nested array independently
+      // needs its own fresh formal length symbol, or falls back to
+      // capshape's own star-shaped conservative treatment" -- naming
+      // capshape as an available, sound (if non-tightest) fallback, not
+      // an unresolved blocker. capshape (shape.hpp) is already general
+      // over the whole Type grammar: scalar gives scalar_shape()
+      // directly (identical to the dedicated case above); product
+      // recurses component-wise via shape_of_product, applying this same
+      // treatment to each field; a nested array field gets the
+      // capacity-fallback row's own array(star,N,N;capshape(tau))
+      // (conservative, not unsound -- no fresh formal length symbol is
+      // minted for it, since a nested field has no independent binding
+      // to mint one from; whether a future slice should mint one anyway,
+      // e.g. via some synthetic per-field symbol, remains the one
+      // genuinely open question here, left deferred and disclosed, not
+      // silently resolved). Scalar parameters route through capshape
+      // too here (not the dedicated scalar_shape() call) purely to avoid
+      // a redundant case split -- capshape's own scalar case returns the
+      // identical shared instance.
+      const auto outcome = shape::capshape(parameter.type, parameter.span);
+      if (!outcome.ok) {
+        return FunctionSummaryOutcome{false, std::nullopt, outcome.diagnostic};
+      }
+      shape_context[*parameter.binding] = *outcome.result;
+      break;
+    }
+    }
+  }
+
+  const auto k_f_outcome = infer_shape_impl(*function.body, shape_context, {});
+  if (!k_f_outcome.ok) {
+    return FunctionSummaryOutcome{false, std::nullopt, k_f_outcome.diagnostic};
+  }
+
+  FunctionSummary summary;
+  summary.k_f = *k_f_outcome.result;
+
+  // AM-003: "Q_f is present only when the declared result is i32 AND the
+  // body has an accepted count-refinement derivation... If Q_f is
+  // absent, the call is legal as an ordinary expression but prohibited
+  // in the count fragment." A failed derivation is accordingly NOT a
+  // failure of this function as a whole -- unlike K_f (unconditionally
+  // required, main.pdf p.12), Q_f's own absence is an ordinary, expected
+  // outcome for most i32-result bodies (e.g. a + b for ordinary scalar
+  // parameters: Table 6 has no C-Var rule at all, so this fails SIZ003
+  // every time, correctly, with no implication the function itself is
+  // malformed). A SIZ-coded infer_count failure -- SIZ003 ("no rule,"
+  // the common case), SIZ006 (e.g. an overflow/no-wrap certificate
+  // Table 8's own shape judgment never checks for ordinary scalar
+  // arithmetic, so this can fail here even when k_f already succeeded
+  // cleanly; main.pdf p.10's own "may enter the count fragment only
+  // when its certificate proves..." confirms this IS exactly a failure
+  // to derive, the same "no accepted derivation" condition AM-003 names,
+  // not a distinct program-level rejection), or any other SIZ code -- is
+  // silently absorbed into q_f=std::nullopt, not propagated as an error.
+  //
+  // A spec-auditor review of this slice's first version found this
+  // absorption had no exception for INT0xx codes, even though an INT
+  // code (unlike a SIZ code) never means "no accepted derivation" --
+  // diagnostics-and-status.md's own INT catalogue defines it as a
+  // genuine internal-invariant violation, "never presented as user
+  // source rejection." Because infer_shape's own scalar/primitive
+  // dispatch deliberately does not recurse into primitive operands
+  // (unlike count::infer_count's own Table 6 traversal, which must, for
+  // C-Add/C-Sub), the two traversals over the same body do not visit an
+  // identical node set -- so a latent invariant violation reachable only
+  // from inside a primitive operand could in principle surface as INT001
+  // solely through this q_f path and be silently swallowed rather than
+  // surfaced as a bug. Fixed: an INT-coded failure here propagates as a
+  // genuine compute_function_summary failure, the same as k_f's own.
+  if (function.result_type && function.result_type->kind == TypeKind::I32) {
+    const auto q_f_outcome = count::infer_count(*function.body, {}, shape_context);
+    if (q_f_outcome.ok) {
+      summary.q_f = *q_f_outcome.result;
+    } else if (q_f_outcome.diagnostic->code.rfind("INT", 0) == 0) {
+      return summary_fail(q_f_outcome.diagnostic->code, q_f_outcome.diagnostic->span, q_f_outcome.diagnostic->message);
+    }
+  }
+
+  return summary_ok(std::move(summary));
+}
+
 } // namespace boundfin::source::size::infer
