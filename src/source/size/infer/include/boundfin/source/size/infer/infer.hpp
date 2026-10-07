@@ -4,6 +4,9 @@
 #include "boundfin/source/size/count/count.hpp"
 #include "boundfin/source/size/shape/shape.hpp"
 
+#include <cstddef>
+#include <unordered_map>
+
 namespace boundfin::source::size::infer {
 
 using boundfin::source::ast::SourceSpan;
@@ -211,5 +214,105 @@ struct FunctionSummaryOutcome {
 // naturally through whichever recursive dispatch reaches a call anywhere
 // in the body, so no separate up-front precondition check is needed.
 [[nodiscard]] FunctionSummaryOutcome compute_function_summary(const ast::FunctionDecl &function);
+
+// A rank-keyed map from an already-summarized function's own 0-based
+// declaration rank (`ast::CallExpr::resolved_callee_rank`'s own type;
+// `ast::Module::functions`'s own index) to its `FunctionSummary` -- the
+// concrete, in-codebase form main.pdf p.11's own `Sigma(f)=(tau_vec->tau,
+// K_f,Phi_f)` takes (`Sigma` itself, not a new concept). Caller-supplied,
+// not derived here, mirroring `shape::ShapeContext`/`count::IndexContext`'s
+// own established "caller-supplied, trusted" pattern -- a module-wide
+// pass that builds one of these for real, by calling
+// `compute_function_summary` for every function in increasing
+// declaration-rank order (the actual mechanism that makes declaration-
+// rank induction sound: `f precedes_M g` guarantees `f`'s own entry
+// already exists in `Sigma` by the time `g`'s body is processed), is
+// deferred to a later, live-wiring slice -- the same "narrow function
+// first" pattern this module's own `infer_shape`/`compute_function_
+// summary` already followed before this one.
+using SigmaContext = std::unordered_map<std::size_t, FunctionSummary>;
+
+// Step 5 of `AM-035`'s ladder, re-sequenced per `AM-037`: reachable once
+// step 4a (`certificate::substitute_term`/`shape::substitute_shape`)
+// plus this module-wide `Sigma` lookup exist, without waiting for step
+// 4b (the certificate-level `Subst` mechanism Table 6's `C-Call` still
+// needs). Implements Table 8's own "call" row (main.pdf p.40: "earlier
+// transformer `K_f`" -> "simultaneous actual substitution, losing
+// exactness to star as needed"), composed with `T-Call`'s own `Sigma(f)`
+// lookup premise (main.pdf p.11: "`Sigma(f)=(tau_vec->tau,K_f,Phi_f)
+// Sigma;Delta;Gamma|-e_vec:tau_vec f precedes_M g`" over
+// "`Sigma,g;Delta;Gamma|-f(e_vec):tau`") and main.pdf p.12's own
+// call-site substitution sentence, which `substitute_shape` (`AM-037`
+// step 4a) already implements in full.
+//
+// Looks up the callee's own already-computed `Sigma(f)` entry in `sigma`
+// by `call_expr.resolved_callee_rank` (`INT001` if absent -- by
+// declaration-rank induction this rank's own entry is guaranteed already
+// present in a correctly-built, rank-ordered `Sigma`, so a miss here is
+// a caller precondition violation, not a program property, mirroring
+// every sibling function's identical trust-boundary reasoning), then
+// looks up the callee's own `ast::FunctionDecl` in `module` by the
+// identical rank (for its own parameter types/bindings -- deliberately
+// NOT duplicated into `FunctionSummary`/`SigmaContext`, per
+// `FunctionSummary`'s own already-established "signature already
+// available on `ast::FunctionDecl`, don't duplicate" convention).
+//
+// Computes a Table 8 shape (via `infer_shape`) ONLY for an actual
+// argument at an array-typed formal-parameter position -- Table 8's own
+// "call" row (main.pdf p.40) premises only on "earlier transformer
+// `K_f`", naming no argument-shape premise at all, unlike every other
+// composite row (literal, product/proj, conditional, fold, builder); an
+// argument at a scalar/product position is never visited here, mirroring
+// this same module's own `infer_shape_impl` scalar/primitive dispatch
+// case (`infer.cpp`), which deliberately does not recurse into a
+// primitive's own operands either -- validating what a non-load-bearing
+// child contains is `count::check_module_count_admissibility`'s own,
+// separate, already-shipped traversal's job (it visits every
+// subexpression of every function body independently), not this
+// function's. A spec-auditor review of this slice's first version found
+// it instead computed every argument's own shape unconditionally,
+// rejecting the whole call if a non-load-bearing one failed -- an
+// unforced scope decision, resting on a citation (main.pdf p.11's "does
+// not allocate or evaluate `e`" sentence) that does not actually support
+// it (that sentence describes the `sz`-judgment's static character, not
+// an obligation to recurse into children whose shape the row's own
+// result does not use) -- the same class of unescalated,
+// inaccurately-cited scope decision `AM-035` step 3's own audit and
+// `AM-037`'s own audit each already found and fixed once in this exact
+// ladder. Fixed: restricted to array-typed positions only, matching this
+// module's own established precedent.
+//
+// Only an array-typed formal parameter's own position contributes to the
+// substitution maps (`AM-035` step 1's own scope: only a top-level
+// `arr<tau,N>` parameter mints a fresh formal length `n_x` at all; a
+// scalar or product parameter -- including one with a nested array field
+// -- mints no symbol whatsoever, so there is nothing in `K_f` for its
+// own actual argument to replace -- `compute_function_summary`'s own
+// parameter-seeding loop mints none for such a field either, via
+// `capshape`'s conservative fallback). For such a parameter, the
+// corresponding actual argument's own already-computed shape is expected
+// to itself be `Array`-kind (`INT001` otherwise -- `T-Call`'s own
+// "ordered actual types agree" premise, already enforced by typecheck's
+// `TYP002`, precludes a real type mismatch here) -- its own `upper` term
+// is mapped into the upper substitution map under the formal's own
+// `"abi#"+to_string(binding)` symbol name (the identical deterministic
+// minting convention `shape_of_abi_array_param`/`count_of_abi_param`
+// already use, `AM-035` step 1); its own `exact` term, if present, is
+// mapped into the exact substitution map under the same name -- if the
+// actual's own exact component is absent, nothing is added for that
+// symbol to the exact map at all (NOT an error here -- `substitute_
+// shape`'s own star-fallback, `AM-037` step 4a, already handles a
+// resulting unresolved exact-position symbol as main.pdf p.12's own
+// named "star" case).
+//
+// Finally substitutes both maps into the callee's own `k_f` via
+// `substitute_shape` (`AM-037` step 4a) -- the call expression's own
+// Table 8 shape is exactly the result. `q_f`/`Phi_f` are not read at all
+// (Table 8's "call" row needs only `K_f`; `Q_f` is Table 6's `C-Call`'s
+// own concern, step 4b, deliberately out of this function's scope, per
+// `AM-037`'s own finding that the two rows need different mechanisms).
+[[nodiscard]] shape::ShapeOutcome infer_call(const ast::CallExpr &call_expr, SourceSpan span, const ast::Module &module,
+                                              const SigmaContext &sigma, const shape::ShapeContext &shape_context,
+                                              const count::IndexContext &index_context);
 
 } // namespace boundfin::source::size::infer

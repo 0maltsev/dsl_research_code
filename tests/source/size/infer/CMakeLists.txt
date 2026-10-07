@@ -8,3 +8,4 @@ endfunction()
 
 boundfin_add_infer_test(boundfin_infer_shape test_infer_shape.cpp)
 boundfin_add_infer_test(boundfin_function_summary test_function_summary.cpp)
+boundfin_add_infer_test(boundfin_infer_call test_infer_call.cpp)

@@ -414,4 +414,84 @@ FunctionSummaryOutcome compute_function_summary(const ast::FunctionDecl &functio
   return summary_ok(std::move(summary));
 }
 
+shape::ShapeOutcome infer_call(const ast::CallExpr &call_expr, SourceSpan span, const ast::Module &module,
+                                const SigmaContext &sigma, const ShapeContext &shape_context,
+                                const count::IndexContext &index_context) {
+  if (!call_expr.resolved_callee_rank) {
+    // Unreachable for a resolver-processed module; mirrors every sibling
+    // function's identical defensive branch.
+    return shape_fail("INT001", span, "internal: call has no resolved callee rank");
+  }
+  const auto rank = *call_expr.resolved_callee_rank;
+  if (rank >= module.functions.size()) {
+    // The resolver only ever sets a rank that indexes module.functions;
+    // mirrors shape_of_proj's identical "trusted index, defensively
+    // checked" reasoning.
+    return shape_fail("INT001", span, "internal: resolved callee rank is out of range");
+  }
+  const auto sigma_it = sigma.find(rank);
+  if (sigma_it == sigma.end()) {
+    // By declaration-rank induction (f precedes_M g), a correctly-built,
+    // rank-ordered Sigma already has this entry by the time any call to
+    // it is processed -- a miss here is a caller precondition violation
+    // (an incomplete or wrongly-scoped Sigma), not a program property.
+    return shape_fail("INT001", span, "internal: Sigma has no entry for the resolved callee rank");
+  }
+  const auto &callee = module.functions[rank];
+  if (callee.parameters.size() != call_expr.arguments.size()) {
+    // Already guaranteed by typecheck's TYP002 arity check; defensive,
+    // mirroring every sibling trust-boundary check in this module.
+    return shape_fail("INT001", span, "internal: call argument count does not match callee parameter count");
+  }
+
+  std::unordered_map<std::string, certificate::TermPtr> exact_substitution;
+  std::unordered_map<std::string, certificate::TermPtr> upper_substitution;
+
+  for (std::size_t i = 0; i < callee.parameters.size(); ++i) {
+    const auto &parameter = callee.parameters[i];
+    if (!parameter.type) {
+      return shape_fail("INT001", span, "internal: callee parameter has no declared type");
+    }
+    if (parameter.type->kind != TypeKind::Array) {
+      // AM-035 step 1's own scope: only a top-level arr<tau,N> parameter
+      // mints a formal length symbol at all; nothing to substitute for
+      // any other parameter kind, regardless of nested structure. Table
+      // 8's own "call" row premises only on K_f (main.pdf p.40, no
+      // argument-shape premise), so this actual argument's own shape is
+      // not computed at all here -- mirrors infer_shape_impl's own
+      // scalar/primitive dispatch case (above), which likewise does not
+      // recurse into a non-load-bearing child; a spec-auditor review of
+      // this slice's first version found it computed every argument's
+      // own shape unconditionally instead, an unforced scope decision
+      // resting on an inaccurate citation -- fixed, see infer.hpp's own
+      // doc comment on infer_call for the full account.
+      continue;
+    }
+    if (!parameter.binding) {
+      return shape_fail("INT001", span, "internal: array callee parameter has no resolved binding");
+    }
+    const auto argument_outcome = infer_shape_impl(*call_expr.arguments[i], shape_context, index_context);
+    if (!argument_outcome.ok) {
+      return argument_outcome;
+    }
+    if ((*argument_outcome.result)->kind != ShapeKind::Array) {
+      // T-Call's own "ordered actual types agree" premise, already
+      // enforced by typecheck's TYP002, precludes a real type mismatch
+      // here.
+      return shape_fail("INT001", span, "internal: actual argument shape is not array-kind for an array parameter");
+    }
+    const auto &argument_array = std::get<shape::ArrayShape>((*argument_outcome.result)->data);
+    if (!argument_array.upper) {
+      return shape_fail("INT001", span, "internal: actual argument array shape has a null upper term");
+    }
+    const auto symbol_name = "abi#" + std::to_string(*parameter.binding);
+    if (argument_array.exact) {
+      exact_substitution[symbol_name] = *argument_array.exact;
+    }
+    upper_substitution[symbol_name] = argument_array.upper;
+  }
+
+  return shape::substitute_shape(sigma_it->second.k_f, exact_substitution, upper_substitution, span);
+}
+
 } // namespace boundfin::source::size::infer
