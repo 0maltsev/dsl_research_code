@@ -546,4 +546,58 @@ struct ShapeOutcome {
 // inputs).
 [[nodiscard]] ShapeOutcome shape_of_fold(const ShapePtr &initial_shape, const ShapePtr &step_shape, SourceSpan span);
 
+// The ABI-array-parameter shape rule (main.pdf p.11 main text, not a
+// named Table 8 row -- AM-030 confirmed this belongs to Phase 3's own
+// scope but deferred implementation; AM-035 (step 1 of a five-step
+// declaration-rank induction ladder for the Sigma/K_f/Q_f/substitution
+// initiative) implements it now, together with Table 6's C-ABI, which
+// mints the identical symbol for the same parameter): "ABI array
+// argument `x:arr<tau,N>` receives a fresh formal length `n_x` under
+// `0<=n_x<=N`. Its shape is `array(n_x,n_x,N;capshape(tau))`." `type` is
+// expected to itself be an Array type (the ABI parameter's own declared
+// type `arr<tau,N>`) -- INT001, not a SIZ code, for a null or non-Array
+// `type`, mirroring capshape's identical trust-boundary reasoning (the
+// same function this one calls for its own `capshape(tau)` component).
+// `param_binding` is the ABI parameter's own BindingId (set by Phase
+// 3.1's resolver), used to mint `n_x` deterministically as
+// `"abi#" + to_string(param_binding)` -- disjoint from
+// `check_count_admissibility`'s own `"idx#"` prefix (count.cpp), closing
+// the namespace-collision gap that function's own doc comment has
+// flagged since Phase 3.4's fourth slice. `n_x` is used as BOTH the
+// exact and upper component (the formal length is exactly itself, by
+// definition, matching C-Idx's and C-ABI's own identical "a symbol is
+// its own exact value" pattern) -- not to be confused with capshape's
+// own, differently-shaped `array(star,N,N;capshape(tau))` result (the
+// capacity-fallback row, used when NO formal length is available at
+// all, e.g. a nested array inside an aggregate this slice does not yet
+// cover -- see below). No certificate obligation is raised for
+// "0<=n_x<=N" itself: a spec-auditor review of this slice traced the
+// actual external mechanism that guarantees it before any static-
+// analysis code (including this function) ever runs -- main.pdf p.12,
+// Sec. 4.4 ("Well-formedness and rejection"): "Rejected modules have no
+// core-language evaluation. Invocation rejection yields InvalidABI
+// before the entry body begins." An out-of-bounds actual length is an
+// ABI-validity failure (InvalidABI, status 4), checked before
+// invocation, not an in-language certificate this function would need
+// to produce -- the same "bound established by context, not re-derived
+// here" reasoning AM-026 already established for C-Idx.
+//
+// Scope (AM-035): this function handles only a parameter whose OWN
+// top-level declared type is `arr<tau,N>` -- main.pdf's own sentence is
+// specific to "ABI array argument `x:arr<tau,N>`," not to every array
+// sub-component of a possibly-aggregate ABI parameter (e.g. a product
+// `i32 x arr<i32,N>` parameter's own nested array field). Whether such a
+// nested array independently needs its own fresh formal length symbol,
+// or falls back to `capshape`'s own star-shaped conservative treatment,
+// is left to a later, separately-scoped slice -- disclosed, not hidden,
+// the same incremental-scope pattern every row/rule in this module has
+// already used. A scalar-typed ABI parameter needs no special handling
+// at all (its own Table 8 shape is `scalar_shape()` directly, no formal
+// length to mint), so this function is deliberately not a general
+// "capshape for ABI parameters" the way `capshape` itself is general
+// over the whole Type grammar -- it is specific to the one case
+// main.pdf's own sentence names.
+[[nodiscard]] ShapeOutcome shape_of_abi_array_param(const ast::TypePtr &type, ast::BindingId param_binding,
+                                                      SourceSpan span);
+
 } // namespace boundfin::source::size::shape

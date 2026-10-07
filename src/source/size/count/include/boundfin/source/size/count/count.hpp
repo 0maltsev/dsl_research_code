@@ -217,4 +217,49 @@ struct ModuleAdmissibilityOutcome {
 // implemented, not merely as designed.
 [[nodiscard]] ModuleAdmissibilityOutcome check_module_count_admissibility(const ast::Module &module);
 
+// Table 6's C-ABI: "ABI length symbol n_x, declaration capacity N" ->
+// "(n_x,N;n_x) and 0<=n_x<=N" (main.pdf p.38). AM-034 found this row
+// names no source expression e at all (unlike every sibling row), so it
+// is not reached via infer_count's own ExprKind dispatch; AM-035 (step 1
+// of a five-step declaration-rank induction ladder for the Sigma/K_f/
+// Q_f/substitution initiative) confirms its real role: seeding the
+// count-refinement context for a function declaration's own formal ABI
+// array parameters, consumed when constructing Sigma(f)'s K_f/Q_f
+// (main.pdf p.12: "n_x seeds Gamma_sz so K_f(n_vec) is checked with the
+// body and stored in Sigma"; AM-003: Q_f is "derived under exactly the
+// same formal parameters, formal array-length symbols... as K_f").
+//
+// Mints n_x deterministically as "abi#" + to_string(param_binding) --
+// disjoint from check_count_admissibility's own "idx#" prefix above,
+// closing the namespace-collision gap that function's own doc comment
+// has flagged since Phase 3.4's fourth slice -- and identical to
+// src/source/size/shape's shape_of_abi_array_param, which mints the same
+// n_x for the same ABI array parameter via the same convention, so both
+// modules' independently-minted symbols agree structurally
+// (certificate::terms_equal compares Symbol names, not object identity)
+// without sharing a context object. No certificate obligation is raised
+// here: "0<=n_x<=N" is axiomatically true by construction -- n_x IS the
+// fresh formal length, under that very bound, by definition (main.pdf
+// p.11 main text) -- the same "no certificate obligation at this call
+// site" reasoning AM-026 already established for C-Idx. A spec-auditor
+// review of this slice located the actual external mechanism that makes
+// this true before any static-analysis code (including this function)
+// ever runs: main.pdf p.12, Sec. 4.4 ("Well-formedness and rejection"):
+// "Rejected modules have no core-language evaluation. Invocation
+// rejection yields InvalidABI before the entry body begins" -- an
+// out-of-bounds actual length is an ABI-validity failure (InvalidABI,
+// status 4, diagnostics-and-status.md), checked before invocation, not
+// an in-language certificate derivation this function would need to
+// produce; Table 6's own C-ABI row (p.38) has no "certificate ..."
+// phrase in its Premises column either, unlike C-Add/C-Sub's NW_+/NW_-.
+// `exact=upper=n_x` matches the row's own result tuple exactly: the
+// formal length is its own exact value, and its only a priori known
+// upper bound (before any actual is substituted in at a call site, step
+// 4/5 of AM-035's ladder) is the declared capacity N itself.
+//
+// Infallible (no SourceSpan/CountOutcome): `capacity` and `param_binding`
+// are plain values, not pointers, so there is nothing to null-check --
+// mirrors shape_of_product's identical infallible-constructor precedent.
+[[nodiscard]] CountResult count_of_abi_param(std::uint32_t capacity, ast::BindingId param_binding);
+
 } // namespace boundfin::source::size::count

@@ -471,4 +471,14 @@ ModuleAdmissibilityOutcome check_module_count_admissibility(const ast::Module &m
   return ModuleAdmissibilityOutcome{true, std::nullopt};
 }
 
+CountResult count_of_abi_param(std::uint32_t capacity, ast::BindingId param_binding) {
+  // See count.hpp's doc comment: no certificate obligation here -- "0<=
+  // n_x<=N" is axiomatically true by construction, matching C-Idx's own
+  // AM-026-established reasoning. Disjoint from check_count_admissibility's
+  // own "idx#" prefix, and identical to shape::shape_of_abi_array_param's
+  // own minting convention for the same parameter (AM-035).
+  const auto n_x = certificate::make_symbol("abi#" + std::to_string(param_binding));
+  return CountResult{n_x, certificate::make_literal(capacity)};
+}
+
 } // namespace boundfin::source::size::count

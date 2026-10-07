@@ -380,4 +380,30 @@ ShapeOutcome shape_of_fold(const ShapePtr &initial_shape, const ShapePtr &step_s
   return shape_fail("INT001", span, "internal: unreachable shape comparison");
 }
 
+ShapeOutcome shape_of_abi_array_param(const ast::TypePtr &type, ast::BindingId param_binding, SourceSpan span) {
+  if (!type || type->kind != ast::TypeKind::Array) {
+    // See shape.hpp's doc comment: this function's only real caller
+    // today is this module's own tests, not a guaranteed-valid pipeline.
+    return shape_fail("INT001", span, "internal: abi array parameter type is not an array type");
+  }
+  const auto &array_type = std::get<ast::ArrayType>(type->data);
+  const auto element_outcome = capshape(array_type.element, span);
+  if (!element_outcome.ok) {
+    return element_outcome;
+  }
+  // AM-035: disjoint from check_count_admissibility's own "idx#" prefix
+  // (count.cpp) -- both modules mint the identical symbol for the same
+  // ABI parameter via this one deterministic convention.
+  const auto n_x = certificate::make_symbol("abi#" + std::to_string(param_binding));
+  ArrayShape result;
+  result.exact = n_x;
+  result.upper = n_x;
+  result.capacity = array_type.capacity;
+  result.element = *element_outcome.result;
+  auto shape = std::make_shared<Shape>();
+  shape->kind = ShapeKind::Array;
+  shape->data = result;
+  return shape_ok(shape);
+}
+
 } // namespace boundfin::source::size::shape
