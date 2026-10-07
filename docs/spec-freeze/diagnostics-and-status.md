@@ -1,6 +1,6 @@
 # Diagnostics, statuses, and failure identities
 
-Normative version: `boundfin-diagnostics-0.1.0`
+Normative version: `boundfin-diagnostics-0.1.1`
 
 Diagnostic codes are stable API. A code's meaning may be clarified without changing its category, but it may not be reused. A behavior change requires a new code and specification version. Diagnostics include code, severity, primary source/artifact location, deterministic message template, ordered related locations, and structured parameters. Human text is not used as an evidence key.
 
@@ -75,6 +75,7 @@ Lexical shadowing by `let`/fold/build is accepted and alpha-renamed; it is not `
 | `SIZ010` | Simultaneous call-summary substitution is incomplete/capturing. |
 | `SIZ011` | Representation, frame, address, increment, or total-memory natural exceeds its admitted bound. |
 | `SIZ012` | Nested type/capacity tree exceeds configured representation limits. |
+| `SIZ013` | Expression's Table 8 shape judgment has no implemented dispatch rule yet. |
 
 ## Effect/termination diagnostics
 

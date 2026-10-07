@@ -24,6 +24,7 @@ add_subdirectory(source/typecheck)
 add_subdirectory(source/size/certificate)
 add_subdirectory(source/size/count)
 add_subdirectory(source/size/shape)
+add_subdirectory(source/size/infer)
 
 # Dev-only Draft 2020-12 meta-schema conformance check for schemas/*.schema.json.
 # Runs Node + ajv (pinned in tools/schema-validate/); it is not part of the
