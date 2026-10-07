@@ -243,6 +243,50 @@ std::optional<std::uint64_t> evaluate_closed(const Term &term) {
   return std::nullopt;
 }
 
+std::optional<TermPtr> substitute_term(const TermPtr &term, const std::unordered_map<std::string, TermPtr> &substitution) {
+  if (!term) {
+    return std::nullopt;
+  }
+  switch (term->kind) {
+  case TermKind::Literal:
+    return term;
+  case TermKind::Symbol: {
+    const auto it = substitution.find(std::get<SymbolTerm>(term->data).name);
+    if (it == substitution.end()) {
+      return std::nullopt;
+    }
+    return it->second;
+  }
+  case TermKind::Add: {
+    const auto &add = std::get<AddTerm>(term->data);
+    const auto lhs = substitute_term(add.lhs, substitution);
+    const auto rhs = substitute_term(add.rhs, substitution);
+    if (!lhs || !rhs) {
+      return std::nullopt;
+    }
+    return make_add(*lhs, *rhs);
+  }
+  case TermKind::Scale: {
+    const auto &scale = std::get<ScaleTerm>(term->data);
+    const auto inner = substitute_term(scale.term, substitution);
+    if (!inner) {
+      return std::nullopt;
+    }
+    return make_scale(scale.factor, *inner);
+  }
+  case TermKind::Max: {
+    const auto &max_term = std::get<MaxTerm>(term->data);
+    const auto lhs = substitute_term(max_term.lhs, substitution);
+    const auto rhs = substitute_term(max_term.rhs, substitution);
+    if (!lhs || !rhs) {
+      return std::nullopt;
+    }
+    return make_max(*lhs, *rhs);
+  }
+  }
+  return std::nullopt;
+}
+
 CheckOutcome check_certificate(const CertificatePtr &certificate, const std::vector<Constraint> &delta) {
   if (!certificate) {
     return fail("null certificate");

@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -68,6 +69,61 @@ TermPtr make_max(TermPtr lhs, TermPtr rhs);
 // the term grammar (t::=n|xi|t+t|kt, no subtraction production) cannot
 // represent symbolically the way C-Add's t+t can.
 [[nodiscard]] std::optional<std::uint64_t> evaluate_closed(const Term &term);
+
+// AM-037 step 4a (2026-10-07): the pure structural half of main.pdf
+// p.12's call-site substitution ("exact or upper actual length
+// expressions are substituted simultaneously into K_f"), deliberately
+// NOT the certificate-level `Subst` mechanism Appendix A.4's prose names
+// ("a substitution node replaces equals in a previously checked
+// formula," deferred since Phase 3.3/`AM-022`, still deferred as step
+// 4b) -- this function performs no certificate check at all, matching
+// Table 8's own "call" row (p.40: "simultaneous actual substitution,
+// losing exactness to star as needed"), which, unlike Table 6's
+// `C-Call` row, never says its own substitution "is certified".
+//
+// Replaces every `Symbol` leaf in `term` whose own name is a key in
+// `substitution` with the mapped replacement term; `Add`/`Scale`/`Max`
+// recurse into their own children, rebuilt via `make_add`/`make_scale`/
+// `make_max` (never arithmetically simplified, matching this project's
+// own established non-reducing convention for every term-building
+// operation elsewhere); a `Literal` is returned unchanged (nothing to
+// replace). Returns `std::nullopt` if a `Symbol` leaf is encountered
+// whose name has no entry in `substitution`, or if `term` itself is
+// null -- mirrors `evaluate_closed`'s own precedent (a plain optional,
+// no diagnostic code, for "could not produce a result"), not a
+// distinguished error case.
+//
+// This single function serves BOTH substitution directions main.pdf
+// p.12 names, via two different (both legitimate) ways a caller may
+// supply `substitution`: for the EXACT direction, a caller builds
+// `substitution` from only the actual arguments whose own exact
+// component is genuinely present, so a resulting `std::nullopt` here
+// IS p.12's own stated "if an exact actual is unavailable, upper
+// substitution yields a conservative star result" case -- an expected,
+// legitimate outcome, not a bug. For the UPPER direction, every formal
+// symbol free in an upper term is expected to have an entry -- NOT
+// because of `T-Call`'s "ordered actual types agree" premise (that only
+// guarantees an actual argument has *some* upper bound at all, nothing
+// about which symbol names can occur free inside a *formal* upper term
+// in the first place); the real dependency is on K_f's own construction
+// (src/source/size/infer's `compute_function_summary`, AM-035 step 3)
+// confining every symbol free in K_f to the function's own formal ABI
+// lengths (`"abi#" + binding`, `shape_of_abi_array_param`). A spec-auditor
+// review of this slice (AM-037 step 4a) traced that this confinement
+// currently holds only as a side effect of AM-028's still-open deferral
+// of symbolic builder/fold-body joins (SIZ008, not yet implemented) --
+// re-examine this citation once that deferred mechanism lands, since a
+// stray non-formal symbol reaching here would currently surface as this
+// function's `std::nullopt`, read by a caller as the caller-bug case
+// below, not as a distinct possibility. So `std::nullopt` here, for the
+// upper direction, would indicate a genuinely incomplete substitution
+// map -- a caller bug, under today's code -- but this function itself
+// does not distinguish the two directions' own different expectedness;
+// that judgment belongs to whichever caller (e.g. a future `Shape`-level
+// substitution) builds `substitution` and interprets a `std::nullopt`
+// result.
+[[nodiscard]] std::optional<TermPtr> substitute_term(const TermPtr &term,
+                                                       const std::unordered_map<std::string, TermPtr> &substitution);
 
 // --- Constraints (main.pdf Sec. 4.2: "A constraint is t = t, t <= t, or a
 // finite conjunction of constraints; Delta is a finite set of them.") A

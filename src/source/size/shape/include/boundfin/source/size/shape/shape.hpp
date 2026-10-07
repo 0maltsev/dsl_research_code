@@ -606,4 +606,75 @@ struct ShapeOutcome {
 [[nodiscard]] ShapeOutcome shape_of_abi_array_param(const ast::TypePtr &type, ast::BindingId param_binding,
                                                       SourceSpan span);
 
+// AM-037 step 4a (2026-10-07): the Shape-level composition of
+// `certificate::substitute_term`, implementing main.pdf p.12's call-site
+// substitution ("exact or upper actual length expressions are
+// substituted simultaneously into K_f") over a whole `Shape` tree, not
+// just one `Term` leaf -- this is the mechanism Table 8's own "call" row
+// (p.40: "simultaneous actual substitution, losing exactness to star as
+// needed") needs, deliberately NOT Table 6's `C-Call` (which additionally
+// needs the still-deferred certificate-level `Subst` mechanism, step 4b,
+// AM-022). Recurses through `ArrayShape::element` and
+// `ProductShape::components`, mirroring `join_shapes`'/`capshape`'s own
+// established recursive-structure pattern; `ShapeKind::Scalar` is
+// returned unchanged (`scalar_shape()`, carrying no term to substitute).
+//
+// Two separate substitution maps, not one, because a formal symbol's own
+// EXACT and UPPER replacement generally differ even though the same
+// formal symbol name can appear in both an ArrayShape's `exact` and
+// `upper` position (e.g. `shape_of_abi_array_param`'s own `n_x`, used as
+// both): at a real call site, an actual argument's own shape carries its
+// exact component (possibly absent) and upper component (always
+// present -- `ArrayShape::upper` is non-optional by this type's own
+// convention, every producing function in this module fills it in) as
+// two generally-different terms, so the formal name "n_x" must resolve to
+// the actual's own exact term when substituted into an `exact` position,
+// and to the actual's own upper term when substituted into an `upper`
+// position. Building these two maps from a call's actual arguments is a
+// future caller's job (the still-deferred Table 8 "call" row wiring);
+// this function only consumes them.
+//
+// The two positions also differ in what a failed per-symbol substitution
+// means, mirroring `certificate::substitute_term`'s own doc comment:
+// - UPPER: every formal symbol appearing in an `upper` position is
+//   expected to resolve (`upper_substitution` is total over every such
+//   symbol) -- NOT because of `T-Call`'s "ordered actual types agree"
+//   premise (that guarantees only that an actual argument has *some*
+//   upper bound, nothing about which symbol names occur free inside a
+//   *formal* upper term); the real dependency is that K_f's own free
+//   symbols are confined to the function's formal ABI-length symbols
+//   (src/source/size/infer's `compute_function_summary`, step 3), a
+//   confinement a spec-auditor review of this slice (AM-037 step 4a)
+//   found currently holds only as a side effect of AM-028's still-open
+//   deferral of symbolic builder/fold-body joins (SIZ008) -- re-examine
+//   this reasoning once that deferred mechanism is implemented. Under
+//   today's code, `certificate::substitute_term` returning
+//   `std::nullopt` here is accordingly a genuinely incomplete
+//   substitution map -- a caller bug -- so this function reports
+//   `INT001`, not a SIZ code, mirroring every other trust-boundary check
+//   in this module.
+// - EXACT: an absent `ArrayShape::exact` stays absent (nothing to
+//   substitute); a *present* `exact` term whose substitution returns
+//   `std::nullopt` (an actual's own exact component was genuinely
+//   unavailable for some formal symbol it mentions) is main.pdf p.12's
+//   own named, legitimate "if an exact actual is unavailable, upper
+//   substitution yields a conservative star result" case -- the
+//   resulting shape's own `exact` becomes `std::nullopt` (star), and
+//   this function still reports `ok=true` for that shape: a weaker but
+//   valid result, not a failure to produce one.
+//
+// `capacity` (the declared `N`) is carried over unchanged -- it is
+// always a literal, never a term built from formal symbols, so there is
+// nothing in it to substitute.
+//
+// Null trust boundary: a null `shape`, a null `ArrayShape::upper`, or a
+// null `TermPtr` inside a present `ArrayShape::exact` is `INT001`, not a
+// SIZ code -- mirroring every other function in this module: no
+// `infer_shape`-level "call" wiring exists yet to supply real,
+// already-validated inputs, so this function's only real caller today is
+// its own tests.
+[[nodiscard]] ShapeOutcome
+substitute_shape(const ShapePtr &shape, const std::unordered_map<std::string, certificate::TermPtr> &exact_substitution,
+                  const std::unordered_map<std::string, certificate::TermPtr> &upper_substitution, SourceSpan span);
+
 } // namespace boundfin::source::size::shape

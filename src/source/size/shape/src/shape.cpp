@@ -408,4 +408,76 @@ ShapeOutcome shape_of_abi_array_param(const ast::TypePtr &type, ast::BindingId p
   return shape_ok(shape);
 }
 
+ShapeOutcome substitute_shape(const ShapePtr &shape,
+                               const std::unordered_map<std::string, certificate::TermPtr> &exact_substitution,
+                               const std::unordered_map<std::string, certificate::TermPtr> &upper_substitution,
+                               SourceSpan span) {
+  if (!shape) {
+    // See shape.hpp's doc comment on substitute_shape: this function's
+    // only real caller today is this module's own tests.
+    return shape_fail("INT001", span, "internal: substitution operand is null");
+  }
+  switch (shape->kind) {
+  case ShapeKind::Scalar:
+    return shape_ok(scalar_shape());
+  case ShapeKind::Array: {
+    const auto &array = std::get<ArrayShape>(shape->data);
+    if (!array.upper) {
+      return shape_fail("INT001", span, "internal: array shape upper term is null");
+    }
+    const auto new_upper = certificate::substitute_term(array.upper, upper_substitution);
+    if (!new_upper) {
+      // See shape.hpp's doc comment: K_f's own free symbols are confined
+      // to the function's formal ABI-length symbols (currently a side
+      // effect of AM-028's still-open SIZ008 deferral, not T-Call -- a
+      // spec-auditor review of this slice corrected an earlier, imprecise
+      // citation here), so a failed upper substitution is a genuinely
+      // incomplete substitution map, not main.pdf p.12's own "star" case
+      // (which is exact-only).
+      return shape_fail("INT001", span, "internal: upper term substitution did not resolve every formal symbol");
+    }
+    std::optional<certificate::TermPtr> new_exact = std::nullopt;
+    if (array.exact) {
+      if (!*array.exact) {
+        return shape_fail("INT001", span, "internal: array shape exact term is null");
+      }
+      // main.pdf p.12: "if an exact actual is unavailable, upper
+      // substitution yields a conservative star result" -- a nullopt
+      // here is that named, legitimate case, not a failure.
+      new_exact = certificate::substitute_term(*array.exact, exact_substitution);
+    }
+    const auto element_outcome = substitute_shape(array.element, exact_substitution, upper_substitution, span);
+    if (!element_outcome.ok) {
+      return element_outcome;
+    }
+    ArrayShape result;
+    result.exact = new_exact;
+    result.upper = *new_upper;
+    result.capacity = array.capacity;
+    result.element = *element_outcome.result;
+    auto result_shape = std::make_shared<Shape>();
+    result_shape->kind = ShapeKind::Array;
+    result_shape->data = result;
+    return shape_ok(result_shape);
+  }
+  case ShapeKind::Product: {
+    const auto &components = std::get<ProductShape>(shape->data).components;
+    std::vector<ShapePtr> substituted_components;
+    substituted_components.reserve(components.size());
+    for (const auto &component : components) {
+      const auto component_outcome = substitute_shape(component, exact_substitution, upper_substitution, span);
+      if (!component_outcome.ok) {
+        return component_outcome;
+      }
+      substituted_components.push_back(*component_outcome.result);
+    }
+    return shape_ok(shape_of_product(std::move(substituted_components)));
+  }
+  }
+  // Unreachable (exhaustive switch over every ShapeKind); INT001, not a
+  // SIZ/user-facing code, matching this module's other defensive
+  // branches (e.g. join_shapes's identical fallback).
+  return shape_fail("INT001", span, "internal: unreachable shape kind");
+}
+
 } // namespace boundfin::source::size::shape
